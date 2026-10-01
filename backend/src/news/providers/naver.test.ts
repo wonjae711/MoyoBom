@@ -31,7 +31,8 @@ describe('fetchNaverNews', () => {
     expect(url.searchParams.get('query')).toBe('경제');
     expect(url.searchParams.get('sort')).toBe('date');
     expect(url.searchParams.get('display')).toBe('100');
-    expect(init.headers).toMatchObject({ 'X-Naver-Client-Id': 'id', 'X-Naver-Client-Secret': 'secret' });
+    expect(url.origin + url.pathname).toBe('https://naverapihub.apigw.ntruss.com/search/v1/news');
+    expect(init.headers).toMatchObject({ 'X-NCP-APIGW-API-KEY-ID': 'id', 'X-NCP-APIGW-API-KEY': 'secret' });
   });
 
   it('응답을 공통 포맷으로 정규화한다 (태그·엔티티 제거, 언론사명, KST 시각)', async () => {
@@ -81,7 +82,9 @@ describe('fetchNaverNews', () => {
   });
 
   it('[예외] 401 응답은 인증 실패로 처리한다', async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ errorCode: '024' }, 401));
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ error: { errorCode: '200', message: 'Authentication Failed' } }, 401),
+    );
     await expect(fetchNaverNews(economy, config(fetchFn))).rejects.toBeInstanceOf(ProviderAuthError);
   });
 

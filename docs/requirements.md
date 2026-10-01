@@ -33,7 +33,7 @@
 **입력**
 | 항목 | 설명 |
 |---|---|
-| 수집 대상 API | 네이버 뉴스 검색 API, The Guardian Open Platform API |
+| 수집 대상 API | 네이버 뉴스 검색 API(**NAVER API HUB** — 개발자센터 검색 API는 2026-07-31 신규 발급 종료로 이관, 현재 무료 체험·검색 전체 월 775,000회), The Guardian Open Platform API |
 | 검색 키워드/카테고리 | 사전 정의된 카테고리 8개(기본안 — 디자인 목업의 카테고리 칩과 최종 대조 필요): 정치, 경제, 사회, 국제, IT·과학, 생활·문화, 스포츠, 연예. 코드 위치: `backend/src/news/types.ts` |
 | 폴링 주기 | 네이버 10분 / Guardian 30분 (node-cron 스케줄 기준). Guardian 무료 키 한도(하루 500회, 초당 1회)를 넘지 않도록 설정 |
 

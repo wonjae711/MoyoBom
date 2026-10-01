@@ -20,7 +20,7 @@
 - 백엔드: Node.js (Express) + Socket.io
 - 프론트엔드: React + TypeScript + react-konva (캔버스/화이트보드)
 - DB: PostgreSQL + pgvector (별도 벡터 DB 사용 금지 — 관계형 데이터와 임베딩을 한 DB에서 관리)
-- 뉴스 API: 네이버 뉴스 검색 API, The Guardian Open Platform API
+- 뉴스 API: 네이버 뉴스 검색 API(**NAVER API HUB** — `naverapihub.apigw.ntruss.com/search/v1/news`, 헤더 `X-NCP-APIGW-API-KEY-ID`/`X-NCP-APIGW-API-KEY`. 개발자센터 openapi.naver.com 검색 API는 2026-07-31 신규 발급 종료), The Guardian Open Platform API. 네이버 로그인(F-07)은 개발자센터에서 별도 발급
 - AI: OpenAI API — 임베딩(text-embedding-3-small)과 요약 모두 OpenAI로 통일 (2026-09-30 확정, 기능별 요약 모델은 개발 시 확정)
 - 스토리지: AWS S3
 - 인증: JWT + 카카오·네이버 OAuth (Google/GitHub 로그인은 사용하지 않음 — 2026-09-21 결정)
@@ -82,7 +82,7 @@
 - 2026-09-29: 기획 문서 정리 완료 (`docs/` 3종 + Notion 동기화). 코드 작업 시작 전
 - 2026-09-30: 요약 AI(OpenAI)·개발 순서 확정, Notion 12주 로드맵 동기화. 다음 단계: 4주차 프로젝트 세팅 + F-01
 - 2026-10-01: 4주차 프로젝트 세팅 완료 — backend/frontend 뼈대, Docker DB(pgvector 0.8.6), 첫 마이그레이션(vector 확장), `/api/health`, CI. 다음 단계: F-01 뉴스 수집
-- 2026-10-01: F-01 구현 — articles 테이블, 네이버·Guardian 수집, 언론사 매핑, 중복 제거, 스케줄러(네이버 10분/Guardian 30분), 예외 처리(요청 실패·한도 초과·형식 오류·인증 실패), 테스트 46개. Guardian 실수집 확인(49건). **네이버는 .env 키 오류(401)로 실수집 미확인** — 키 수정 후 확인 필요. 미사용 기사 30일 보관 정리는 board_items가 생기는 F-05에서 구현. 카테고리 8개는 기본안(디자인 칩과 대조 필요). 다음 단계: F-02 실시간 피드
+- 2026-10-01: F-01 구현 — articles 테이블, 네이버·Guardian 수집, 언론사 매핑, 중복 제거, 스케줄러(네이버 10분/Guardian 30분), 예외 처리(요청 실패·한도 초과·형식 오류·인증 실패), 테스트 46개. Guardian 실수집 확인(49건). **네이버는 401로 실수집 미확인** — 원인: 네이버 검색 API가 NAVER API HUB로 이관됨. 코드는 API HUB 주소·헤더로 전환 완료, 사용자가 API HUB에서 '뉴스' 앱 키 발급 후 확인 필요. 미사용 기사 30일 보관 정리는 board_items가 생기는 F-05에서 구현. 카테고리 8개는 기본안(디자인 칩과 대조 필요). 다음 단계: F-02 실시간 피드
 
 ## 코딩 컨벤션
 

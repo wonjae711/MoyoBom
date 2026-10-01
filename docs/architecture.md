@@ -50,7 +50,7 @@
 | 백엔드 | Node.js (Express) | WebSocket을 적극 활용하는 실시간 협업 로직 |
 | 실시간 통신 | Socket.io | 보드별 room 단위 동시 편집 동기화 |
 | 데이터베이스 | PostgreSQL + pgvector | 관계형 데이터와 AI 임베딩 검색을 하나의 DB에서 함께 처리 (별도 벡터 DB 불필요) |
-| 뉴스 API | 네이버 뉴스 검색 API, The Guardian Open Platform API | 본문 전체 대신 요약(description)+원문 링크 방식으로 저작권 리스크 최소화 |
+| 뉴스 API | 네이버 뉴스 검색 API(NAVER API HUB), The Guardian Open Platform API | 본문 전체 대신 요약(description)+원문 링크 방식으로 저작권 리스크 최소화 |
 | AI API | OpenAI API (Embedding + 요약) | 이슈 클러스터링용 임베딩 생성, 기사·링크·클러스터 요약. 2026-09-30: 기존에 사용하던 OpenAI API로 통일해 키·결제 관리를 한 곳으로. 기능별 모델은 개발 시 확정 |
 | 스토리지 | AWS S3 | 사진 카드(핀터레스트 스타일) 이미지 업로드. 비공개 버킷 + presigned URL |
 | 인증 | JWT + 카카오·네이버 OAuth | 2026-09-21: GitHub/Google 소셜 로그인에서 국내 타겟에 맞게 카카오·네이버로 변경. 토큰은 httpOnly 쿠키 |

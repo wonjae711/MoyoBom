@@ -4,7 +4,12 @@ import { cleanText } from '../text.js';
 import type { Category, FetchResult, NormalizedArticle } from '../types.js';
 import { type FetchFn, isHttpUrl, isRecord, requestJson } from './http.js';
 
-const NAVER_NEWS_URL = 'https://openapi.naver.com/v1/search/news.json';
+/**
+ * NAVER API HUB 뉴스 검색. 개발자센터(openapi.naver.com) 검색 API는 2026-07-31부터 신규 발급이 끝나
+ * API HUB로 이관됐다. 요청 파라미터·응답 형식은 이전과 같고 주소와 인증 헤더만 다르다.
+ * 한도: 검색 API 전체 월 775,000회, 키당 초당 50회 (초과 시 429)
+ */
+const NAVER_NEWS_URL = 'https://naverapihub.apigw.ntruss.com/search/v1/news';
 /** 한 번에 받을 수 있는 최대 개수 */
 const DISPLAY = 100;
 
@@ -26,8 +31,8 @@ export async function fetchNaverNews(category: Category, config: NaverConfig): P
     url,
     {
       headers: {
-        'X-Naver-Client-Id': config.clientId,
-        'X-Naver-Client-Secret': config.clientSecret,
+        'X-NCP-APIGW-API-KEY-ID': config.clientId,
+        'X-NCP-APIGW-API-KEY': config.clientSecret,
       },
     },
     config.fetchFn ?? fetch,
