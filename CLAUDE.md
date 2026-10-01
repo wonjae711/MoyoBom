@@ -27,6 +27,15 @@
 - 배포: Docker Compose + AWS EC2
 - **Redis는 사용하지 않음** (단일 서버 스코프에서는 불필요. Socket.io 다중 서버 확장이 실제로 필요해지기 전까지 도입 금지)
 
+## 프로젝트 구조 · 실행
+
+- `backend/` — Express 5 + TypeScript(ESM, NodeNext), 포트 **4000**. 테스트: Vitest + supertest. 린트: ESLint. 마이그레이션: node-pg-migrate(SQL 파일, `backend/migrations/`)
+- `frontend/` — React 19 + TypeScript + Vite, 포트 **5173**, `/api`는 백엔드로 프록시. 린트: oxlint
+- `docker-compose.yml` — 로컬 PostgreSQL 17 + pgvector, 호스트 포트 **5433** (T-Planner 등 5432와 충돌 방지)
+- 환경 변수는 저장소 루트 `.env` 하나로 관리(Git 제외). 백엔드는 `src/config/env.ts`에서 zod로 검증하고, 에러 메시지에 값은 노출하지 않음
+- CI: `.github/workflows/ci.yml` — backend(lint·typecheck·test·build·migrate up), frontend(lint·build)
+- 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
+
 ## 개발 우선순위 (진행 순서)
 
 **원칙: 기능 단위 백엔드 우선** — 각 기능은 API를 먼저 완성·테스트한 뒤 화면을 붙인다. CI는 초기 세팅에 포함. (2026-09-30 확정, Notion "기능별 난이도 및 구현 순서" 12주 로드맵과 동일)
@@ -68,6 +77,7 @@
 
 - 2026-09-29: 기획 문서 정리 완료 (`docs/` 3종 + Notion 동기화). 코드 작업 시작 전
 - 2026-09-30: 요약 AI(OpenAI)·개발 순서 확정, Notion 12주 로드맵 동기화. 다음 단계: 4주차 프로젝트 세팅 + F-01
+- 2026-10-01: 4주차 프로젝트 세팅 완료 — backend/frontend 뼈대, Docker DB(pgvector 0.8.6), 첫 마이그레이션(vector 확장), `/api/health`, CI. 다음 단계: F-01 뉴스 수집
 
 ## 코딩 컨벤션
 

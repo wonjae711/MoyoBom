@@ -1,0 +1,22 @@
+/* 디자인 팔레트 (Notion "디자인(UI/UX)" 페이지 기준) */
+:root {
+  --color-black: #212121;
+  --color-charcoal: #36454f; /* 협업 보드 캔버스 배경 */
+  --color-gray-dark: #5c6670;
+  --color-gray-mid: #8a939b;
+  --color-gray-light: #e4e6e8;
+  --color-off-white: #f4f5f6;
+  --color-white: #ffffff;
+
+  font-family: system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  color: var(--color-black);
+  background: var(--color-off-white);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}

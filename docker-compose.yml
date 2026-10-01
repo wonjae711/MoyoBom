@@ -1,0 +1,23 @@
+name: moyobom
+
+# 로컬 개발용 DB. 계정 정보는 로컬 전용 값이며 배포 환경에서는 사용하지 않는다.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: moyobom
+      POSTGRES_PASSWORD: moyobom
+      POSTGRES_DB: moyobom
+    ports:
+      # T-Planner 등 다른 로컬 PostgreSQL(5432)과 충돌하지 않도록 5433 사용
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moyobom -d moyobom"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:
