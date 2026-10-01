@@ -10,6 +10,11 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.url(),
+  /** 뉴스 자동 수집 on/off. 개발 중 API 호출을 아끼고 싶을 때 false */
+  NEWS_COLLECTOR_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
 
   NAVER_CLIENT_ID: z.string().min(1),
   NAVER_CLIENT_SECRET: z.string().min(1),

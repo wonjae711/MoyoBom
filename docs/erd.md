@@ -149,6 +149,8 @@ timestamp created_at
 | USERS | UNIQUE(provider, provider_id) | 동일 소셜 계정 중복 가입 방지 (F-07) |
 | ARTICLES | UNIQUE(original_link) | 동일 기사 중복 수집 방지 (F-01) |
 | ARTICLES | INDEX(category, published_at) | 카테고리별 피드·필터 조회 성능 (F-02, F-04) |
+| ARTICLES | INDEX(published_at) | 전체 최신순 피드 조회 성능 (F-02) |
+| ARTICLES | CHECK(api_collected면 category·published_at 필수) | API 수집 기사의 필수값 보장. null 허용은 user_submitted만 |
 | REFRESH_TOKENS | UNIQUE(token_hash) | refresh token 조회·폐기 (F-07) |
 | BOARD_MEMBERS | UNIQUE(board_id, user_id) | 동일 사용자 중복 참여 방지 |
 | BOARD_INVITES | UNIQUE(token) | 초대 링크 위조/충돌 방지 (F-07) |

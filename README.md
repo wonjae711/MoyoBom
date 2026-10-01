@@ -23,6 +23,8 @@ GUARDIAN_API_KEY=
 OPENAI_API_KEY=
 DATABASE_URL=postgres://moyobom:moyobom@localhost:5433/moyobom
 PORT=4000
+TEST_DATABASE_URL=postgres://moyobom:moyobom@localhost:5433/moyobom_test
+NEWS_COLLECTOR_ENABLED=true   # (선택) false면 뉴스 자동 수집 끔
 ```
 
 ```bash
@@ -30,7 +32,8 @@ docker compose up -d          # DB 실행
 
 cd backend
 npm install
-npm run migrate -- up         # DB 마이그레이션
+npm run migrate -- up         # DB 마이그레이션 (개발 DB)
+npm run migrate:test -- up    # 테스트 DB(moyobom_test)에도 적용 — DB 테스트용
 npm run dev                   # API 서버
 
 cd ../frontend

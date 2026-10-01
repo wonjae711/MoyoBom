@@ -14,6 +14,11 @@ describe('loadEnv', () => {
     const env = loadEnv(valid);
     expect(env.PORT).toBe(4000);
     expect(env.NODE_ENV).toBe('development');
+    expect(env.NEWS_COLLECTOR_ENABLED).toBe(true);
+  });
+
+  it('NEWS_COLLECTOR_ENABLED=false면 자동 수집을 끈다', () => {
+    expect(loadEnv({ ...valid, NEWS_COLLECTOR_ENABLED: 'false' }).NEWS_COLLECTOR_ENABLED).toBe(false);
   });
 
   it('필수 값이 빠지면 키 이름만 담은 에러를 던지고 값은 노출하지 않는다', () => {

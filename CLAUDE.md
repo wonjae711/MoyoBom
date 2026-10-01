@@ -33,7 +33,11 @@
 - `frontend/` — React 19 + TypeScript + Vite, 포트 **5173**, `/api`는 백엔드로 프록시. 린트: oxlint
 - `docker-compose.yml` — 로컬 PostgreSQL 17 + pgvector, 호스트 포트 **5433** (T-Planner 등 5432와 충돌 방지)
 - 환경 변수는 저장소 루트 `.env` 하나로 관리(Git 제외). 백엔드는 `src/config/env.ts`에서 zod로 검증하고, 에러 메시지에 값은 노출하지 않음
-- CI: `.github/workflows/ci.yml` — backend(lint·typecheck·test·build·migrate up), frontend(lint·build)
+- CI: `.github/workflows/ci.yml` — backend(lint·typecheck·test·build·migrate up), frontend(lint·build). 러너는 `ubuntu-24.04`로 고정. 결과 확인은 `gh run list` / `gh run view --log-failed`
+- 마이그레이션 스크립트는 Node 내장 `--env-file-if-exists=../.env`로 환경 변수를 읽는다 (`dotenv`와 `dotenv-cli`가 같은 `dotenv` 명령 이름을 써서 CI에서 충돌했음 — `dotenv-cli` 다시 추가 금지)
+- 뉴스 수집(F-01): `backend/src/news/` — providers(naver·guardian) → collector(예외 정책) → repository(저장·중복 제거) → `NewsEvents`의 `articles:new` 이벤트(F-02가 구독). `NEWS_COLLECTOR_ENABLED=false`로 자동 수집을 끌 수 있음
+- 외부 API 에러 메시지에 요청 URL·원본 에러를 그대로 넣지 말 것 (Guardian은 API 키가 URL 쿼리에 들어감)
+- DB 테스트는 `TEST_DATABASE_URL`(로컬: `moyobom_test`)에서만 실행되며, DB 이름이 `_test`로 끝나지 않으면 거부함. 새 마이그레이션을 만들면 `npm run migrate:test -- up`도 실행
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
 
 ## 개발 우선순위 (진행 순서)
@@ -78,6 +82,7 @@
 - 2026-09-29: 기획 문서 정리 완료 (`docs/` 3종 + Notion 동기화). 코드 작업 시작 전
 - 2026-09-30: 요약 AI(OpenAI)·개발 순서 확정, Notion 12주 로드맵 동기화. 다음 단계: 4주차 프로젝트 세팅 + F-01
 - 2026-10-01: 4주차 프로젝트 세팅 완료 — backend/frontend 뼈대, Docker DB(pgvector 0.8.6), 첫 마이그레이션(vector 확장), `/api/health`, CI. 다음 단계: F-01 뉴스 수집
+- 2026-10-01: F-01 구현 — articles 테이블, 네이버·Guardian 수집, 언론사 매핑, 중복 제거, 스케줄러(네이버 10분/Guardian 30분), 예외 처리(요청 실패·한도 초과·형식 오류·인증 실패), 테스트 46개. Guardian 실수집 확인(49건). **네이버는 .env 키 오류(401)로 실수집 미확인** — 키 수정 후 확인 필요. 미사용 기사 30일 보관 정리는 board_items가 생기는 F-05에서 구현. 카테고리 8개는 기본안(디자인 칩과 대조 필요). 다음 단계: F-02 실시간 피드
 
 ## 코딩 컨벤션
 

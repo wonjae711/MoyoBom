@@ -13,6 +13,8 @@ services:
       - "5433:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
+      # 볼륨을 처음 만들 때 테스트용 DB(moyobom_test)도 함께 생성
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U moyobom -d moyobom"]
       interval: 5s
