@@ -1,0 +1,2 @@
+# 줄바꿈을 LF로 통일 (Windows 개발 환경 ↔ Docker/EC2 Linux)
+* text=auto eol=lf
