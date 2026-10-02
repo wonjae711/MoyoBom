@@ -3,6 +3,7 @@ import { loadEnv } from './env.js';
 
 const valid = {
   DATABASE_URL: 'postgres://u:p@localhost:5433/db',
+  JWT_SECRET: 'x'.repeat(32),
   NAVER_CLIENT_ID: 'id',
   NAVER_CLIENT_SECRET: 'secret',
   GUARDIAN_API_KEY: 'guardian',
@@ -15,6 +16,10 @@ describe('loadEnv', () => {
     expect(env.PORT).toBe(4000);
     expect(env.NODE_ENV).toBe('development');
     expect(env.NEWS_COLLECTOR_ENABLED).toBe(true);
+  });
+
+  it('JWT_SECRET이 32자보다 짧으면 거부한다', () => {
+    expect(() => loadEnv({ ...valid, JWT_SECRET: 'short' })).toThrow(/JWT_SECRET/);
   });
 
   it('NEWS_COLLECTOR_ENABLED=false면 자동 수집을 끈다', () => {

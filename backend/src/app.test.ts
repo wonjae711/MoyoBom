@@ -2,12 +2,19 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp, type AppDeps } from './app.js';
 import type { FeedPage } from './news/feed.js';
+import { TEST_APP_ORIGIN, authCookie, fakeAuthDeps } from './test/auth.js';
 
 const emptyPage: FeedPage = { articles: [], nextCursor: null };
 
 function makeApp(overrides: Partial<AppDeps> = {}) {
   const listFeed = vi.fn(async () => emptyPage);
-  const app = createApp({ checkDb: async () => true, articles: { listFeed }, ...overrides });
+  const app = createApp({
+    checkDb: async () => true,
+    articles: { listFeed },
+    auth: fakeAuthDeps(),
+    appOrigin: TEST_APP_ORIGIN,
+    ...overrides,
+  });
   return { app, listFeed };
 }
 
@@ -26,9 +33,16 @@ describe('GET /api/health', () => {
 });
 
 describe('GET /api/articles', () => {
-  it('기본값(30건, 전체 카테고리)으로 조회한다', async () => {
+  it('[F-07] 로그인하지 않으면 401', async () => {
     const { app, listFeed } = makeApp();
     const res = await request(app).get('/api/articles');
+    expect(res.status).toBe(401);
+    expect(listFeed).not.toHaveBeenCalled();
+  });
+
+  it('기본값(30건, 전체 카테고리)으로 조회한다', async () => {
+    const { app, listFeed } = makeApp();
+    const res = await request(app).get('/api/articles').set('Cookie', await authCookie());
     expect(res.status).toBe(200);
     expect(res.body).toEqual(emptyPage);
     expect(listFeed).toHaveBeenCalledWith({ limit: 30, before: undefined, category: undefined });
@@ -37,7 +51,9 @@ describe('GET /api/articles', () => {
   it('limit·category·before 커서를 해석해 넘긴다', async () => {
     const { app, listFeed } = makeApp();
     const before = encodeURIComponent('2026-10-01T12:00:00.000Z_42');
-    await request(app).get(`/api/articles?limit=10&category=economy&before=${before}`);
+    await request(app)
+      .get(`/api/articles?limit=10&category=economy&before=${before}`)
+      .set('Cookie', await authCookie());
     expect(listFeed).toHaveBeenCalledWith({
       limit: 10,
       category: 'economy',
@@ -52,7 +68,7 @@ describe('GET /api/articles', () => {
     ['before=not-a-cursor', 'before'],
   ])('잘못된 파라미터(%s)는 400', async (query, field) => {
     const { app, listFeed } = makeApp();
-    const res = await request(app).get(`/api/articles?${query}`);
+    const res = await request(app).get(`/api/articles?${query}`).set('Cookie', await authCookie());
     expect(res.status).toBe(400);
     expect(res.body.fields).toContain(field);
     expect(listFeed).not.toHaveBeenCalled();
@@ -63,7 +79,9 @@ describe('GET /api/articles', () => {
       throw new Error('password authentication failed for user "moyobom"');
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const res = await request(makeApp({ articles: { listFeed } }).app).get('/api/articles');
+    const res = await request(makeApp({ articles: { listFeed } }).app)
+      .get('/api/articles')
+      .set('Cookie', await authCookie());
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: '서버 오류' });
   });

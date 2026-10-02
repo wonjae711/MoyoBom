@@ -1,10 +1,13 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { createApp } from './app.js';
+import { LoginRateLimiter } from './auth/rateLimit.js';
+import { AuthService } from './auth/service.js';
 import { loadEnv } from './config/env.js';
 import { createPool, pingDb } from './db/pool.js';
 import { listFeed } from './news/feed.js';
 import { NewsEvents, createNewsCollector, startNewsSchedule } from './news/index.js';
+import { attachSocketAuth } from './realtime/auth.js';
 import { attachNewsFeed } from './realtime/newsFeed.js';
 
 const env = loadEnv();
@@ -13,12 +16,19 @@ const newsEvents = new NewsEvents();
 const app = createApp({
   checkDb: () => pingDb(pool),
   articles: { listFeed: (query) => listFeed(pool, query) },
+  auth: {
+    auth: new AuthService({ pool, jwtSecret: env.JWT_SECRET }),
+    loginLimiter: new LoginRateLimiter(),
+    jwtSecret: env.JWT_SECRET,
+    cookies: { secure: env.NODE_ENV === 'production' },
+  },
+  appOrigin: env.APP_ORIGIN,
 });
 const server = createServer(app);
 
 // 개발 중에는 Vite 프록시, 배포에서는 nginx가 같은 출처로 연결하므로 CORS를 열지 않는다.
-// TODO(F-07): 보드 room 도입 시 연결 단계에서 JWT 검증 (설계 원칙 5)
 const io = new Server(server, { serveClient: false });
+attachSocketAuth(io, { jwtSecret: env.JWT_SECRET, appOrigin: env.APP_ORIGIN });
 attachNewsFeed(io, newsEvents);
 
 const newsSchedule = env.NEWS_COLLECTOR_ENABLED

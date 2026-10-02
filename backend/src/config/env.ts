@@ -16,6 +16,11 @@ const envSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
 
+  /** 로그인 토큰(JWT) 서명 키 */
+  JWT_SECRET: z.string().min(32),
+  /** 화면 주소. 쿠키 인증 요청·소켓 연결의 Origin 확인에 쓴다 */
+  APP_ORIGIN: z.url().default('http://localhost:5173'),
+
   NAVER_CLIENT_ID: z.string().min(1),
   NAVER_CLIENT_SECRET: z.string().min(1),
   GUARDIAN_API_KEY: z.string().min(1),

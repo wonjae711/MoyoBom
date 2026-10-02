@@ -25,6 +25,8 @@ DATABASE_URL=postgres://moyobom:moyobom@localhost:5433/moyobom
 PORT=4000
 TEST_DATABASE_URL=postgres://moyobom:moyobom@localhost:5433/moyobom_test
 NEWS_COLLECTOR_ENABLED=true   # (선택) false면 뉴스 자동 수집 끔
+JWT_SECRET=                   # 32자 이상 임의 문자열 (로그인 토큰 서명)
+APP_ORIGIN=http://localhost:5173
 ```
 
 ```bash
