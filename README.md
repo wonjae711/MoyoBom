@@ -46,6 +46,6 @@ npm run dev                   # 화면 (/api 요청은 백엔드로 프록시)
 | 위치 | 명령 |
 |---|---|
 | backend | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
-| frontend | `npm run lint` · `npm run build` |
+| frontend | `npm run lint` · `npm test` · `npm run build` |
 
 GitHub Actions(`.github/workflows/ci.yml`)가 push·PR마다 위 검사와 마이그레이션 적용을 자동으로 실행한다.

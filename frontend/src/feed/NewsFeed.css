@@ -1,0 +1,156 @@
+.feed {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.feed__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--color-black);
+  padding-bottom: 8px;
+}
+
+.feed__title {
+  margin: 0;
+  font-family: Georgia, 'Noto Serif KR', 'Nanum Myeongjo', serif;
+  font-size: 1.5rem;
+}
+
+.feed__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--color-gray-dark);
+}
+
+.feed__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-gray-mid);
+}
+
+.feed__status--connected .feed__dot {
+  background: var(--color-black);
+  animation: feed-pulse 2s ease-in-out infinite;
+}
+
+.feed__status--disconnected {
+  color: var(--color-black);
+  font-weight: 600;
+}
+
+@keyframes feed-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.feed__error {
+  padding: 10px 12px;
+  border: 1px solid var(--color-black);
+  background: var(--color-white);
+}
+
+.feed__empty {
+  color: var(--color-gray-dark);
+}
+
+.feed__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  padding: 14px 16px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-light);
+  border-radius: 8px;
+  transition: border-color 0.6s, box-shadow 0.6s;
+}
+
+/* 실시간으로 막 들어온 기사 */
+.card--new {
+  border-color: var(--color-black);
+  box-shadow: 0 0 0 1px var(--color-black);
+  animation: card-in 0.4s ease-out;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--color-gray-dark);
+  margin-bottom: 6px;
+}
+
+.card__category {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-off-white);
+  border: 1px solid var(--color-gray-light);
+  color: var(--color-black);
+}
+
+.card__title {
+  display: block;
+  font-family: Georgia, 'Noto Serif KR', 'Nanum Myeongjo', serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-black);
+  text-decoration: none;
+}
+
+.card__title:hover {
+  text-decoration: underline;
+}
+
+.card__description {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-gray-dark);
+}
+
+.feed__more {
+  display: block;
+  margin: 20px auto 0;
+  padding: 10px 20px;
+  border: 1px solid var(--color-black);
+  border-radius: 6px;
+  background: var(--color-white);
+  color: var(--color-black);
+  font: inherit;
+  cursor: pointer;
+}
+
+.feed__more:hover {
+  background: var(--color-black);
+  color: var(--color-white);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card--new,
+  .feed__status--connected .feed__dot {
+    animation: none;
+  }
+}

@@ -85,8 +85,9 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 
 **처리 로직**
 1. 클라이언트가 접속하면 Socket.io news-feed room에 join한다.
-2. F-01에서 신규 기사가 저장되면 서버가 io.to('news-feed').emit('new-article', article)을 호출한다.
-3. 클라이언트는 이벤트 수신 시 피드 최상단에 새 카드를 추가한다.
+2. F-01에서 신규 기사가 저장되면 서버가 수집 1회분을 최신순으로 묶어 io.to('news-feed').emit('feed:new-articles', { articles, total, truncated })를 호출한다. 한 번에 최대 50건만 보내고, 넘치면 truncated=true로 알린다 (2026-10-02 변경: 기사 1건당 이벤트 1번은 첫 수집 때 수천 번 emit되어 묶음 방식으로 바꿈).
+3. 클라이언트는 이벤트 수신 시 피드 최상단에 새 카드를 추가한다. truncated면 REST로 최신 목록을 다시 조회한다.
+   - REST: `GET /api/articles?limit=30&category=&before=<커서>` — 최신순, 커서 기반 "더 보기". user_submitted 기사는 제외
 4. (고도화) 키워드/카테고리별로 room을 세분화(news-feed:{category})해 관심사 기반 구독 지원.
 
 **출력**: 클라이언트 화면에 실시간 반영된 새 기사 카드

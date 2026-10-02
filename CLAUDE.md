@@ -33,11 +33,14 @@
 - `frontend/` — React 19 + TypeScript + Vite, 포트 **5173**, `/api`는 백엔드로 프록시. 린트: oxlint
 - `docker-compose.yml` — 로컬 PostgreSQL 17 + pgvector, 호스트 포트 **5433** (T-Planner 등 5432와 충돌 방지)
 - 환경 변수는 저장소 루트 `.env` 하나로 관리(Git 제외). 백엔드는 `src/config/env.ts`에서 zod로 검증하고, 에러 메시지에 값은 노출하지 않음
-- CI: `.github/workflows/ci.yml` — backend(lint·typecheck·test·build·migrate up), frontend(lint·build). 러너는 `ubuntu-24.04`로 고정. 결과 확인은 `gh run list` / `gh run view --log-failed`
+- CI: `.github/workflows/ci.yml` — backend(lint·typecheck·migrate up·test·build), frontend(lint·test·build). 러너는 `ubuntu-24.04`로 고정. 결과 확인은 `gh run list` / `gh run view --log-failed`
 - 마이그레이션 스크립트는 Node 내장 `--env-file-if-exists=../.env`로 환경 변수를 읽는다 (`dotenv`와 `dotenv-cli`가 같은 `dotenv` 명령 이름을 써서 CI에서 충돌했음 — `dotenv-cli` 다시 추가 금지)
 - 뉴스 수집(F-01): `backend/src/news/` — providers(naver·guardian) → collector(예외 정책) → repository(저장·중복 제거) → `NewsEvents`의 `articles:new` 이벤트(F-02가 구독). `NEWS_COLLECTOR_ENABLED=false`로 자동 수집을 끌 수 있음
 - 외부 API 에러 메시지에 요청 URL·원본 에러를 그대로 넣지 말 것 (Guardian은 API 키가 URL 쿼리에 들어감)
 - DB 테스트는 `TEST_DATABASE_URL`(로컬: `moyobom_test`)에서만 실행되며, DB 이름이 `_test`로 끝나지 않으면 거부함. 새 마이그레이션을 만들면 `npm run migrate:test -- up`도 실행
+- 실시간 피드(F-02): `backend/src/realtime/newsFeed.ts`(Socket.io, room `news-feed`, 이벤트 `feed:new-articles` — 최대 50건 묶음, 넘치면 `truncated`), REST `GET /api/articles`(`backend/src/news/feed.ts`, 커서 "발행시각_id"). 프론트 `frontend/src/feed/` — 연결·재연결 시 REST로 최신 목록을 다시 받아 누락분을 채움. 카테고리 표시 이름은 백엔드 `types.ts`와 프론트 `feed/types.ts` 두 곳을 함께 수정
+- 소켓은 아직 인증 없음 — F-07에서 연결 단계 JWT 검증 추가 예정 (`server.ts` TODO)
+- 백엔드 테스트는 파일을 순차 실행(`vitest.config.ts` fileParallelism: false — DB 테스트끼리 같은 테이블을 TRUNCATE하기 때문)
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
 
 ## 개발 우선순위 (진행 순서)
@@ -83,6 +86,7 @@
 - 2026-09-30: 요약 AI(OpenAI)·개발 순서 확정, Notion 12주 로드맵 동기화. 다음 단계: 4주차 프로젝트 세팅 + F-01
 - 2026-10-01: 4주차 프로젝트 세팅 완료 — backend/frontend 뼈대, Docker DB(pgvector 0.8.6), 첫 마이그레이션(vector 확장), `/api/health`, CI. 다음 단계: F-01 뉴스 수집
 - 2026-10-01: F-01 구현 — articles 테이블, 네이버·Guardian 수집, 언론사 매핑, 중복 제거, 스케줄러(네이버 10분/Guardian 30분), 예외 처리(요청 실패·한도 초과·형식 오류·인증 실패), 테스트 46개. Guardian 실수집 확인(49건). 네이버는 API HUB 이관 대응 후 실수집 확인(첫 수집 667건, 태그·엔티티 잔여 0건). 남은 품질 과제: ① 언론사 매핑률 26%(지역·인터넷 언론이 많아 나머지는 도메인 표시) ② 카테고리 오분류 → 2026-10-02 카테고리별 구체적 키워드 2~3개 + 검색 우선순위로 개선(연예·스포츠·정치·국제·경제는 양호, 사회·문화는 일부 섞임, IT·과학은 키워드 방식 한계). **F-04 착수 시 AI 분류(OpenAI) 도입 여부를 사용자와 재검토할 것**. 미사용 기사 30일 보관 정리는 board_items가 생기는 F-05에서 구현. 카테고리 8개는 기본안(디자인 칩과 대조 필요). 다음 단계: F-02 실시간 피드
+- 2026-10-02: 언론사명 매핑 추가(사용자 확인, 매핑률 26%→54%, 기존 기사는 `backend/scripts/backfill-press.ts`로 갱신). F-02 구현 — Socket.io 실시간 브로드캐스트, 피드 REST API(커서 페이지네이션), 프론트 피드 화면(연결 상태 표시, 새 기사 강조, 재연결 시 누락분 보완, 더 보기). 테스트 백엔드 68·프론트 7. 프론트 프록시 경유 종단 확인(REST 200, 수집 직후 소켓으로 새 기사 수신). 다음 단계: 중간발표(10/15) 준비 — 필요 시 EC2 배포(CD), 그 후 F-07
 
 ## 코딩 컨벤션
 
