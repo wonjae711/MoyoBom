@@ -19,10 +19,13 @@ export interface NaverConfig {
   fetchFn?: FetchFn;
 }
 
-/** 카테고리 하나를 최신순으로 검색한다. 응답: { items: [{ title, originallink, link, description, pubDate }] } */
-export async function fetchNaverNews(category: Category, config: NaverConfig): Promise<FetchResult> {
+/**
+ * 카테고리의 키워드 하나로 최신순 검색한다. 결과는 모두 그 카테고리로 분류한다.
+ * 응답: { items: [{ title, originallink, link, description, pubDate }] }
+ */
+export async function fetchNaverNews(category: Category, query: string, config: NaverConfig): Promise<FetchResult> {
   const url = new URL(NAVER_NEWS_URL);
-  url.searchParams.set('query', category.naverQuery);
+  url.searchParams.set('query', query);
   url.searchParams.set('display', String(DISPLAY));
   url.searchParams.set('sort', 'date');
 

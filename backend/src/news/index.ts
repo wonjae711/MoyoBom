@@ -6,7 +6,7 @@ import { NewsEvents } from './events.js';
 import { fetchGuardianNews } from './providers/guardian.js';
 import { fetchNaverNews } from './providers/naver.js';
 import { insertCollectedArticles } from './repository.js';
-import { CATEGORIES } from './types.js';
+import { CATEGORIES, NAVER_SEARCH_ORDER } from './types.js';
 
 /** 수집 주기 (requirements.md F-01): 네이버 10분, Guardian 30분 */
 const NAVER_CRON = '*/10 * * * *';
@@ -17,7 +17,10 @@ export function createNewsCollector(env: Env, pool: pg.Pool, events: NewsEvents)
   return new NewsCollector({
     providers: {
       naver: {
-        requests: CATEGORIES.map((category) => () => fetchNaverNews(category, naver)),
+        requests: NAVER_SEARCH_ORDER.flatMap((code) => {
+          const category = CATEGORIES.find((c) => c.code === code)!;
+          return category.naverQueries.map((query) => () => fetchNaverNews(category, query, naver));
+        }),
         quotaResetAt: (now) => nextMidnight(now, 9),
       },
       guardian: {

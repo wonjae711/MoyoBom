@@ -39,11 +39,12 @@
 
 **처리 로직**
 1. node-cron이 설정된 주기마다 트리거된다.
-2. 네이버는 카테고리별 검색 키워드로 요청(sort=date)하고, Guardian은 카테고리 구분 없이 최신 기사를 한 번에 요청한 뒤 응답의 section 필드로 카테고리를 매핑한다.
+2. 네이버는 카테고리마다 구체적인 검색 키워드 2~3개로 요청(sort=date, 키워드별 1회)하고, Guardian은 카테고리 구분 없이 최신 기사를 한 번에 요청한 뒤 응답의 section 필드로 카테고리를 매핑한다.
 3. 응답받은 각 기사 데이터를 공통 포맷으로 정규화한다: `{ title, description, source, category, original_link, published_at }`
    - 네이버 응답에는 언론사명·카테고리가 없음(title, originallink, link, description, pubDate만 제공)
    - source: originallink의 도메인을 언론사명 매핑 테이블(예: chosun.com → 조선일보)로 변환, 매핑에 없으면 도메인 그대로 저장
-   - category: 검색에 사용한 카테고리로 지정. 같은 기사가 여러 카테고리 검색에 걸리면 최초 저장 시 카테고리를 유지(기사당 카테고리 1개)
+   - category: 검색에 사용한 카테고리로 지정. 같은 기사가 여러 카테고리 검색에 걸리면 먼저 검색한 카테고리를 유지(기사당 카테고리 1개). 검색 순서는 주제가 뚜렷한 카테고리부터(연예→스포츠→경제→정치→국제→IT·과학→사회→문화)
+   - (2026-10-02) '국제'·'IT 과학'처럼 넓은 단어 하나로 검색하면 오분류가 많아 구체적 키워드 여러 개로 변경. 키워드 방식의 한계(특히 IT·과학)는 F-04 착수 시 AI 분류 도입 여부로 재검토
    - 네이버 title/description의 HTML 태그(`<b>`)와 엔티티(`&quot;` 등) 제거
    - originallink가 비어 있으면 link 사용
    - published_at은 timestamptz로 통일(네이버 RFC1123 KST, Guardian ISO 8601 UTC)
