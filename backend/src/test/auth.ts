@@ -2,6 +2,8 @@ import { ACCESS_COOKIE } from '../auth/http.js';
 import { LoginRateLimiter } from '../auth/rateLimit.js';
 import type { AuthRouteDeps } from '../routes/auth.js';
 import type { OAuthRouteDeps } from '../routes/oauth.js';
+import type { BoardRouteDeps } from '../routes/boards.js';
+import type { BoardService } from '../boards/service.js';
 import { signAccessToken } from '../auth/tokens.js';
 
 export const TEST_JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
@@ -40,4 +42,23 @@ export function fakeOAuthDeps(): OAuthRouteDeps {
     appOrigin: TEST_APP_ORIGIN,
     kakao: null,
   };
+}
+
+/** 알림을 기록만 하는 가짜 BoardNotifier */
+export function recordingNotifier() {
+  const calls: Array<[string, ...string[]]> = [];
+  return {
+    calls,
+    notifier: {
+      boardRenamed: (boardId: string, title: string) => void calls.push(['boardRenamed', boardId, title]),
+      boardDeleted: async (boardId: string) => void calls.push(['boardDeleted', boardId]),
+      membersChanged: (boardId: string) => void calls.push(['membersChanged', boardId]),
+      memberRemoved: async (boardId: string, userId: string) => void calls.push(['memberRemoved', boardId, userId]),
+    },
+  };
+}
+
+/** 보드 기능을 쓰지 않는 테스트용 의존성 */
+export function fakeBoardDeps(): BoardRouteDeps {
+  return { boards: {} as BoardService, notifier: recordingNotifier().notifier };
 }

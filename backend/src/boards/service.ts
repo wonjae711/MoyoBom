@@ -1,0 +1,373 @@
+import { randomBytes } from 'node:crypto';
+import type pg from 'pg';
+import type { CategoryCode } from '../news/types.js';
+import {
+  BoardError,
+  type BoardItem,
+  type BoardMember,
+  type BoardRole,
+  type BoardSnapshot,
+  type BoardSummary,
+  type ItemType,
+} from './types.js';
+
+/** 초대 링크 유효기간 7일 (requirements.md F-07 초대 링크 정책) */
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface ItemRow {
+  id: string;
+  item_type: ItemType;
+  article_id: string | null;
+  content: string | null;
+  image_key: string | null;
+  position_x: number;
+  position_y: number;
+  rotation: number;
+  z_index: number;
+  created_by: string | null;
+  updated_at: Date;
+  a_title: string | null;
+  a_description: string | null;
+  a_source: string | null;
+  a_category: string | null;
+  a_original_link: string | null;
+  a_published_at: Date | null;
+}
+
+const ITEM_COLUMNS = `
+  bi.id, bi.item_type, bi.article_id, bi.content, bi.image_key, bi.position_x, bi.position_y,
+  bi.rotation, bi.z_index, bi.created_by, bi.updated_at,
+  a.title AS a_title, a.description AS a_description, a.source AS a_source, a.category AS a_category,
+  a.original_link AS a_original_link, a.published_at AS a_published_at`;
+
+function toItem(row: ItemRow): BoardItem {
+  return {
+    id: row.id,
+    type: row.item_type,
+    articleId: row.article_id,
+    article:
+      row.article_id && row.a_title !== null
+        ? {
+            title: row.a_title,
+            description: row.a_description ?? '',
+            source: row.a_source ?? '',
+            category: row.a_category as CategoryCode | null,
+            originalLink: row.a_original_link ?? '',
+            publishedAt: row.a_published_at?.toISOString() ?? null,
+          }
+        : null,
+    content: row.content,
+    imageKey: row.image_key,
+    x: row.position_x,
+    y: row.position_y,
+    rotation: row.rotation,
+    zIndex: row.z_index,
+    createdBy: row.created_by,
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+type Db = pg.Pool | pg.PoolClient;
+
+export type NewItemInput =
+  | { type: 'article'; articleId: string; x: number; y: number }
+  | { type: 'memo'; content: string; x: number; y: number };
+
+/**
+ * 보드·멤버·초대·카드 (F-05, F-06, F-07 초대).
+ * 모든 작업은 먼저 멤버인지 확인한다. 멤버가 아니면 보드가 있어도 not_found로 답해 존재 여부를 숨긴다.
+ * 카드 변경은 board_items(현재 상태)와 board_events(변경 기록)에 함께 저장하고 boards.updated_at을 갱신한다.
+ */
+export class BoardService {
+  constructor(private readonly pool: pg.Pool) {}
+
+  private async tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getRole(boardId: string, userId: string, db: Db = this.pool): Promise<BoardRole | null> {
+    const { rows } = await db.query<{ role: BoardRole }>(
+      'SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2',
+      [boardId, userId],
+    );
+    return rows[0]?.role ?? null;
+  }
+
+  private async requireRole(boardId: string, userId: string, need: 'member' | 'owner', db: Db = this.pool) {
+    const role = await this.getRole(boardId, userId, db);
+    if (!role) throw new BoardError('not_found', '보드를 찾을 수 없습니다');
+    if (need === 'owner' && role !== 'owner') throw new BoardError('forbidden', '보드 주인만 할 수 있습니다');
+    return role;
+  }
+
+  private async log(db: Db, boardId: string, userId: string, actionType: string, payload: object) {
+    await db.query('INSERT INTO board_events (board_id, user_id, action_type, payload) VALUES ($1, $2, $3, $4)', [
+      boardId,
+      userId,
+      actionType,
+      JSON.stringify(payload),
+    ]);
+    await db.query('UPDATE boards SET updated_at = now() WHERE id = $1', [boardId]);
+  }
+
+  // ---------- 보드 (F-06) ----------
+
+  async listBoards(userId: string): Promise<BoardSummary[]> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      title: string;
+      role: BoardRole;
+      member_count: number;
+      item_count: number;
+      updated_at: Date;
+    }>(
+      `SELECT b.id, b.title, m.role, b.updated_at,
+         (SELECT count(*)::int FROM board_members WHERE board_id = b.id) AS member_count,
+         (SELECT count(*)::int FROM board_items WHERE board_id = b.id) AS item_count
+       FROM board_members m JOIN boards b ON b.id = m.board_id
+       WHERE m.user_id = $1
+       ORDER BY b.updated_at DESC, b.id DESC`,
+      [userId],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      role: r.role,
+      memberCount: r.member_count,
+      itemCount: r.item_count,
+      updatedAt: r.updated_at.toISOString(),
+    }));
+  }
+
+  /** 새 보드를 만들고 만든 사람을 owner로 넣는다 */
+  async createBoard(userId: string, title: string): Promise<BoardSummary> {
+    return this.tx(async (client) => {
+      const { rows } = await client.query<{ id: string; updated_at: Date }>(
+        'INSERT INTO boards (owner_id, title) VALUES ($1, $2) RETURNING id, updated_at',
+        [userId, title],
+      );
+      const board = rows[0]!;
+      await client.query("INSERT INTO board_members (board_id, user_id, role) VALUES ($1, $2, 'owner')", [
+        board.id,
+        userId,
+      ]);
+      return { id: board.id, title, role: 'owner', memberCount: 1, itemCount: 0, updatedAt: board.updated_at.toISOString() };
+    });
+  }
+
+  async getSnapshot(boardId: string, userId: string): Promise<BoardSnapshot> {
+    const role = await this.requireRole(boardId, userId, 'member');
+    const [board, members, items] = await Promise.all([
+      this.pool.query<{ id: string; title: string; owner_id: string; updated_at: Date }>(
+        'SELECT id, title, owner_id, updated_at FROM boards WHERE id = $1',
+        [boardId],
+      ),
+      this.pool.query<{ user_id: string; nickname: string; role: BoardRole }>(
+        `SELECT m.user_id, u.nickname, m.role FROM board_members m JOIN users u ON u.id = m.user_id
+         WHERE m.board_id = $1 ORDER BY m.role DESC, m.joined_at`,
+        [boardId],
+      ),
+      this.pool.query<ItemRow>(
+        `SELECT ${ITEM_COLUMNS} FROM board_items bi LEFT JOIN articles a ON a.id = bi.article_id
+         WHERE bi.board_id = $1 ORDER BY bi.z_index, bi.id`,
+        [boardId],
+      ),
+    ]);
+    const b = board.rows[0]!;
+    return {
+      board: { id: b.id, title: b.title, ownerId: b.owner_id, updatedAt: b.updated_at.toISOString() },
+      role,
+      members: members.rows.map((m): BoardMember => ({ userId: m.user_id, nickname: m.nickname, role: m.role })),
+      items: items.rows.map(toItem),
+    };
+  }
+
+  async renameBoard(boardId: string, userId: string, title: string): Promise<void> {
+    await this.requireRole(boardId, userId, 'owner');
+    await this.pool.query('UPDATE boards SET title = $2, updated_at = now() WHERE id = $1', [boardId, title]);
+  }
+
+  async deleteBoard(boardId: string, userId: string): Promise<void> {
+    await this.requireRole(boardId, userId, 'owner');
+    await this.pool.query('DELETE FROM boards WHERE id = $1', [boardId]);
+  }
+
+  // ---------- 멤버·초대 (F-07) ----------
+
+  /** owner만: 현재 초대 링크를 돌려준다. 없거나 만료됐으면 새로 만든다 */
+  async getInvite(boardId: string, userId: string, now = new Date()): Promise<{ token: string; expiresAt: string }> {
+    await this.requireRole(boardId, userId, 'owner');
+    const { rows } = await this.pool.query<{ token: string; expires_at: Date }>(
+      'SELECT token, expires_at FROM board_invites WHERE board_id = $1 AND expires_at > $2',
+      [boardId, now],
+    );
+    const current = rows[0];
+    return current
+      ? { token: current.token, expiresAt: current.expires_at.toISOString() }
+      : this.reissueInvite(boardId, userId, now);
+  }
+
+  /** owner만: 초대 링크를 새로 만든다. 기존 링크는 더 이상 쓸 수 없다 */
+  async reissueInvite(boardId: string, userId: string, now = new Date()): Promise<{ token: string; expiresAt: string }> {
+    await this.requireRole(boardId, userId, 'owner');
+    const token = randomBytes(24).toString('base64url');
+    const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
+    await this.pool.query(
+      `INSERT INTO board_invites (board_id, token, created_by, expires_at) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (board_id) DO UPDATE SET token = EXCLUDED.token, created_by = EXCLUDED.created_by,
+         expires_at = EXCLUDED.expires_at, created_at = now()`,
+      [boardId, token, userId, expiresAt],
+    );
+    return { token, expiresAt: expiresAt.toISOString() };
+  }
+
+  private async findInvite(token: string, now: Date, db: Db = this.pool) {
+    const { rows } = await db.query<{ board_id: string; title: string; member_count: number }>(
+      `SELECT i.board_id, b.title, (SELECT count(*)::int FROM board_members WHERE board_id = b.id) AS member_count
+       FROM board_invites i JOIN boards b ON b.id = i.board_id
+       WHERE i.token = $1 AND i.expires_at > $2`,
+      [token, now],
+    );
+    if (!rows[0]) throw new BoardError('invite_invalid', '만료되었거나 올바르지 않은 초대 링크입니다');
+    return rows[0];
+  }
+
+  /** 초대 링크를 열었을 때 보여줄 보드 정보 */
+  async previewInvite(token: string, now = new Date()): Promise<{ boardId: string; title: string; memberCount: number }> {
+    const invite = await this.findInvite(token, now);
+    return { boardId: invite.board_id, title: invite.title, memberCount: invite.member_count };
+  }
+
+  /** 초대 수락: editor로 참여한다. 이미 멤버면 그대로 둔다 */
+  async acceptInvite(token: string, userId: string, now = new Date()): Promise<{ boardId: string; joined: boolean }> {
+    return this.tx(async (client) => {
+      const invite = await this.findInvite(token, now, client);
+      const { rowCount } = await client.query(
+        `INSERT INTO board_members (board_id, user_id, role) VALUES ($1, $2, 'editor')
+         ON CONFLICT (board_id, user_id) DO NOTHING`,
+        [invite.board_id, userId],
+      );
+      if (rowCount) await this.log(client, invite.board_id, userId, 'member:join', {});
+      return { boardId: invite.board_id, joined: rowCount === 1 };
+    });
+  }
+
+  /** owner는 editor를 내보낼 수 있고, editor는 스스로 나갈 수 있다. owner는 나갈 수 없다(보드 삭제만 가능) */
+  async removeMember(boardId: string, actorId: string, targetUserId: string): Promise<void> {
+    const actorRole = await this.requireRole(boardId, actorId, 'member');
+    if (actorId !== targetUserId && actorRole !== 'owner') {
+      throw new BoardError('forbidden', '보드 주인만 다른 멤버를 내보낼 수 있습니다');
+    }
+    const targetRole = await this.getRole(boardId, targetUserId);
+    if (!targetRole) throw new BoardError('not_found', '보드 멤버가 아닙니다');
+    if (targetRole === 'owner') throw new BoardError('invalid', '보드 주인은 나갈 수 없습니다. 보드를 삭제해 주세요');
+    await this.tx(async (client) => {
+      await client.query('DELETE FROM board_members WHERE board_id = $1 AND user_id = $2', [boardId, targetUserId]);
+      await this.log(client, boardId, actorId, actorId === targetUserId ? 'member:leave' : 'member:remove', {
+        userId: targetUserId,
+      });
+    });
+  }
+
+  // ---------- 카드 (F-05) ----------
+
+  private async selectItem(db: Db, boardId: string, itemId: string): Promise<BoardItem> {
+    const { rows } = await db.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM board_items bi LEFT JOIN articles a ON a.id = bi.article_id
+       WHERE bi.board_id = $1 AND bi.id = $2`,
+      [boardId, itemId],
+    );
+    if (!rows[0]) throw new BoardError('not_found', '이미 삭제된 카드입니다');
+    return toItem(rows[0]);
+  }
+
+  /** 새 카드는 맨 위(z_index 최대+1)에 놓는다 */
+  async addItem(boardId: string, userId: string, input: NewItemInput): Promise<BoardItem> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      if (input.type === 'article') {
+        const { rowCount } = await client.query('SELECT 1 FROM articles WHERE id = $1', [input.articleId]);
+        if (!rowCount) throw new BoardError('invalid', '없는 기사입니다');
+      }
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO board_items (board_id, item_type, article_id, content, position_x, position_y, z_index, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6,
+           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $7)
+         RETURNING id`,
+        [
+          boardId,
+          input.type,
+          input.type === 'article' ? input.articleId : null,
+          input.type === 'memo' ? input.content : null,
+          input.x,
+          input.y,
+          userId,
+        ],
+      );
+      const itemId = rows[0]!.id;
+      await this.log(client, boardId, userId, 'card:add', { itemId, type: input.type });
+      return this.selectItem(client, boardId, itemId);
+    });
+  }
+
+  /**
+   * 드래그가 끝난 뒤 위치를 저장한다 (last-write-wins). 옮긴 카드는 맨 위로 올라온다.
+   * 드래그 중의 중간 위치는 저장하지 않는다 (card:moving은 소켓으로 중계만).
+   */
+  async moveItem(
+    boardId: string,
+    userId: string,
+    itemId: string,
+    to: { x: number; y: number; rotation?: number },
+  ): Promise<BoardItem> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const { rowCount } = await client.query(
+        `UPDATE board_items SET position_x = $3, position_y = $4, rotation = coalesce($5, rotation),
+           z_index = (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), updated_at = now()
+         WHERE board_id = $1 AND id = $2`,
+        [boardId, itemId, to.x, to.y, to.rotation ?? null],
+      );
+      if (!rowCount) throw new BoardError('not_found', '이미 삭제된 카드입니다');
+      await this.log(client, boardId, userId, 'card:move', { itemId, x: to.x, y: to.y, rotation: to.rotation });
+      return this.selectItem(client, boardId, itemId);
+    });
+  }
+
+  async updateMemo(boardId: string, userId: string, itemId: string, content: string): Promise<BoardItem> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const { rowCount } = await client.query(
+        `UPDATE board_items SET content = $3, updated_at = now()
+         WHERE board_id = $1 AND id = $2 AND item_type = 'memo'`,
+        [boardId, itemId, content],
+      );
+      if (!rowCount) throw new BoardError('not_found', '이미 삭제된 메모입니다');
+      await this.log(client, boardId, userId, 'card:update', { itemId });
+      return this.selectItem(client, boardId, itemId);
+    });
+  }
+
+  async deleteItem(boardId: string, userId: string, itemId: string): Promise<void> {
+    await this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const { rowCount } = await client.query('DELETE FROM board_items WHERE board_id = $1 AND id = $2', [
+        boardId,
+        itemId,
+      ]);
+      if (!rowCount) throw new BoardError('not_found', '이미 삭제된 카드입니다');
+      await this.log(client, boardId, userId, 'card:delete', { itemId });
+    });
+  }
+}

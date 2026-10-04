@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp, type AppDeps } from './app.js';
 import type { FeedPage } from './news/feed.js';
-import { TEST_APP_ORIGIN, authCookie, fakeAuthDeps, fakeOAuthDeps } from './test/auth.js';
+import { TEST_APP_ORIGIN, authCookie, fakeAuthDeps, fakeBoardDeps, fakeOAuthDeps } from './test/auth.js';
 
 const emptyPage: FeedPage = { articles: [], nextCursor: null };
 
@@ -13,6 +13,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     articles: { listFeed },
     auth: fakeAuthDeps(),
     oauth: fakeOAuthDeps(),
+    boards: fakeBoardDeps(),
     appOrigin: TEST_APP_ORIGIN,
     ...overrides,
   });

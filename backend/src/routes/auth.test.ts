@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import { LoginRateLimiter } from '../auth/rateLimit.js';
 import { AuthService } from '../auth/service.js';
-import { TEST_APP_ORIGIN, TEST_JWT_SECRET, fakeOAuthDeps } from '../test/auth.js';
+import { TEST_APP_ORIGIN, TEST_JWT_SECRET, fakeBoardDeps, fakeOAuthDeps } from '../test/auth.js';
 import { createTestPool, testDatabaseUrl } from '../test/db.js';
 
 const user = { email: 'Reporter@Example.com', password: 'correct-horse-9', nickname: '기자' };
@@ -36,6 +36,7 @@ describe.skipIf(!testDatabaseUrl)('인증 API (DB)', () => {
         cookies: { secure: false },
       },
       oauth: fakeOAuthDeps(),
+      boards: fakeBoardDeps(),
       appOrigin: TEST_APP_ORIGIN,
     });
   });

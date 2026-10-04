@@ -40,6 +40,8 @@
 - DB 테스트는 `TEST_DATABASE_URL`(로컬: `moyobom_test`)에서만 실행되며, DB 이름이 `_test`로 끝나지 않으면 거부함. 새 마이그레이션을 만들면 `npm run migrate:test -- up`도 실행
 - 실시간 피드(F-02): `backend/src/realtime/newsFeed.ts`(Socket.io, room `news-feed`, 이벤트 `feed:new-articles` — 최대 50건 묶음, 넘치면 `truncated`), REST `GET /api/articles`(`backend/src/news/feed.ts`, 커서 "발행시각_id"). 프론트 `frontend/src/feed/` — 연결·재연결 시 REST로 최신 목록을 다시 받아 누락분을 채움. 카테고리 표시 이름은 백엔드 `types.ts`와 프론트 `feed/types.ts` 두 곳을 함께 수정
 - 인증(F-07): `backend/src/auth/` — scrypt 비밀번호, JWT(jose, HS256) access 15분 + refresh 14일(DB에는 SHA-256 해시, 1회용 회전), httpOnly 쿠키(`access_token` SameSite=Lax / `refresh_token` SameSite=Strict·Path=/api/auth). `requireAuth`로 보호(피드 포함), `checkOrigin`으로 CSRF 방지, 소켓은 `realtime/auth.ts`에서 쿠키·Origin 검증. 프론트 `api/client.ts`의 `apiFetch`가 401이면 한 번 갱신 후 재시도. 새 API는 기본적으로 `requireAuth` 뒤에 둘 것
+- 협업 보드(F-05·F-06·F-07 초대): `backend/src/boards/service.ts`(권한 확인·카드·초대·변경 기록, 멤버가 아니면 not_found로 존재 숨김), REST `routes/boards.ts`(`/api/boards`, `/api/invites`), 실시간 `realtime/boardSync.ts`(room `board:{id}`, 이벤트는 requirements.md F-05 처리 로직 8). REST로 바뀐 내용은 `BoardNotifier`로 소켓에 알림. 카드 변경은 항상 board_events 기록 + boards.updated_at 갱신
+- DB 테스트 공통 도우미 `src/test/fixtures.ts`(resetDb·createUser·createArticle). 새 테이블이 articles/users를 참조하면 TRUNCATE에 CASCADE 필요
 - 백엔드 테스트는 파일을 순차 실행(`vitest.config.ts` fileParallelism: false — DB 테스트끼리 같은 테이블을 TRUNCATE하기 때문)
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
 
@@ -89,7 +91,8 @@
 - 2026-10-01: F-01 구현 — articles 테이블, 네이버·Guardian 수집, 언론사 매핑, 중복 제거, 스케줄러(네이버 10분/Guardian 30분), 예외 처리(요청 실패·한도 초과·형식 오류·인증 실패), 테스트 46개. Guardian 실수집 확인(49건). 네이버는 API HUB 이관 대응 후 실수집 확인(첫 수집 667건, 태그·엔티티 잔여 0건). 남은 품질 과제: ① 언론사 매핑률 26%(지역·인터넷 언론이 많아 나머지는 도메인 표시) ② 카테고리 오분류 → 2026-10-02 카테고리별 구체적 키워드 2~3개 + 검색 우선순위로 개선(연예·스포츠·정치·국제·경제는 양호, 사회·문화는 일부 섞임, IT·과학은 키워드 방식 한계). **F-04 착수 시 AI 분류(OpenAI) 도입 여부를 사용자와 재검토할 것**. 미사용 기사 30일 보관 정리는 board_items가 생기는 F-05에서 구현. 카테고리 8개는 기본안(디자인 칩과 대조 필요). 다음 단계: F-02 실시간 피드
 - 2026-10-02: 언론사명 매핑 추가(사용자 확인, 매핑률 26%→54%, 기존 기사는 `backend/scripts/backfill-press.ts`로 갱신). F-02 구현 — Socket.io 실시간 브로드캐스트, 피드 REST API(커서 페이지네이션), 프론트 피드 화면(연결 상태 표시, 새 기사 강조, 재연결 시 누락분 보완, 더 보기). 테스트 백엔드 68·프론트 7. 프론트 프록시 경유 종단 확인(REST 200, 수집 직후 소켓으로 새 기사 수신). 다음 단계: 중간발표(10/15) 준비 — 필요 시 EC2 배포(CD), 그 후 F-07
 - 2026-10-02: F-07 1단계 — users·refresh_tokens 테이블(+articles.submitted_by FK), 이메일 가입·로그인·토큰 갱신·로그아웃·내 정보 API, 로그인 실패 제한, CSRF(Origin) 확인, 소켓 연결 인증, 피드 로그인 필수화, 프론트 로그인·회원가입 화면·로그인 보호 라우팅. 테스트 백엔드 101·프론트 13. 남은 것: 네이버 소셜 로그인, 초대 링크는 F-05와 함께.
-- 2026-10-04: 카카오 로그인 구현·실계정 확인 완료(`backend/src/auth/kakao.ts`, `routes/oauth.ts` — state 쿠키로 CSRF 방지, 첫 로그인 시 가입·이후 로그인, 닉네임은 첫 가입 때만 저장). 리다이렉트 URI `{APP_ORIGIN}/api/auth/kakao/callback`, 동의항목은 닉네임만. 다음: 네이버 로그인(개발자센터 '네이버 로그인' 키 필요) 또는 F-05 로컬 데모 계정 demo@moyobom.dev / demo-pass-1234 (개발 DB 전용)
+- 2026-10-04: 카카오 로그인 구현·실계정 확인 완료(`backend/src/auth/kakao.ts`, `routes/oauth.ts` — state 쿠키로 CSRF 방지, 첫 로그인 시 가입·이후 로그인, 닉네임은 첫 가입 때만 저장). 리다이렉트 URI `{APP_ORIGIN}/api/auth/kakao/callback`, 동의항목은 닉네임만. 다음: 네이버 로그인(개발자센터 '네이버 로그인' 키 필요) 또는 F-05. 로컬 데모 계정 demo@moyobom.dev / demo-pass-1234 (개발 DB 전용)
+- 2026-10-04: F-05 백엔드 — boards·board_members·board_invites·board_items·board_events 테이블, 보드 CRUD·목록(F-06), 초대 링크·멤버 관리(F-07), 소켓 실시간 카드 동기화(추가·이동·수정·삭제, 드래그 중계, ack 롤백, 재접속 스냅샷), 미사용 기사 30일 정리(F-01). 테스트 백엔드 152. 남은 것: **보드 화면(캔버스 variant 확정 필요)**, 사진 카드(S3, 9~10주차), 네이버 로그인
 
 ## 코딩 컨벤션
 

@@ -45,7 +45,7 @@ describe.skipIf(!testDatabaseUrl)('listFeed (DB)', () => {
     pool = createTestPool();
   });
   beforeEach(async () => {
-    await pool.query('TRUNCATE articles RESTART IDENTITY');
+    await pool.query('TRUNCATE articles RESTART IDENTITY CASCADE');
   });
   afterAll(async () => {
     await pool.end();

@@ -9,12 +9,22 @@ import { listFeed } from './news/feed.js';
 import { NewsEvents, createNewsCollector, startNewsSchedule } from './news/index.js';
 import { attachSocketAuth } from './realtime/auth.js';
 import { attachNewsFeed } from './realtime/newsFeed.js';
+import { attachBoardSync, type BoardNotifier } from './realtime/boardSync.js';
+import { BoardService } from './boards/service.js';
 
 const env = loadEnv();
 const pool = createPool(env.DATABASE_URL);
 const newsEvents = new NewsEvents();
 const authService = new AuthService({ pool, jwtSecret: env.JWT_SECRET });
 const cookies = { secure: env.NODE_ENV === 'production' };
+const boards = new BoardService(pool);
+// 소켓 서버가 만들어진 뒤 채워지는 알림 대리자 (REST 라우터와 소켓 서버가 서로를 참조하므로)
+const notifier: BoardNotifier = {
+  boardRenamed: (...args) => boardNotifier.boardRenamed(...args),
+  boardDeleted: (...args) => boardNotifier.boardDeleted(...args),
+  membersChanged: (...args) => boardNotifier.membersChanged(...args),
+  memberRemoved: (...args) => boardNotifier.memberRemoved(...args),
+};
 const app = createApp({
   checkDb: () => pingDb(pool),
   articles: { listFeed: (query) => listFeed(pool, query) },
@@ -33,6 +43,7 @@ const app = createApp({
           }
         : null,
   },
+  boards: { boards, notifier },
   appOrigin: env.APP_ORIGIN,
 });
 const server = createServer(app);
@@ -41,9 +52,10 @@ const server = createServer(app);
 const io = new Server(server, { serveClient: false });
 attachSocketAuth(io, { jwtSecret: env.JWT_SECRET, appOrigin: env.APP_ORIGIN });
 attachNewsFeed(io, newsEvents);
+const boardNotifier = attachBoardSync(io, boards);
 
 const newsSchedule = env.NEWS_COLLECTOR_ENABLED
-  ? startNewsSchedule(createNewsCollector(env, pool, newsEvents))
+  ? startNewsSchedule(createNewsCollector(env, pool, newsEvents), pool)
   : null;
 if (!newsSchedule) console.log('[news] 자동 수집 꺼짐 (NEWS_COLLECTOR_ENABLED=false)');
 
