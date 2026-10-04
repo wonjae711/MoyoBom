@@ -1,10 +1,13 @@
 import type Konva from 'konva'
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
-import { Group, Layer, Rect, Stage, Text } from 'react-konva'
+import { Group, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import type { FeedArticle } from '../feed/types'
 import {
   ARTICLE,
   CHIP_FONT,
+  CLUSTER,
+  CLUSTER_TEXT_FONT,
+  CLUSTER_TITLE_FONT,
   COLORS,
   FONT_HAND,
   FONT_SANS,
@@ -16,20 +19,26 @@ import {
   cardSize,
   categoryLabel,
   chipHeight,
+  clusterLayout,
   displayRotation,
   measureTextHeight,
   memoMeta,
   toBoard,
   type View,
 } from './cardLayout'
-import type { BoardMember } from './types'
+import type { BoardCluster, BoardMember } from './types'
 import type { ViewItem } from './useBoardSync'
 
 /** 피드에서 끌어 온 기사를 담는 드래그 데이터 형식 */
 export const ARTICLE_DRAG_TYPE = 'application/x-moyobom-article'
 
+export type ClusterAction = 'arrange' | 'restore' | 'dismiss'
+
 interface Props {
   items: ViewItem[]
+  /** AI 이슈 클러스터 (F-08) */
+  clusters: BoardCluster[]
+  onClusterAction: (clusterId: string, action: ClusterAction) => void
   members: Map<string, BoardMember>
   view: View
   onViewChange: (view: View) => void
@@ -142,8 +151,17 @@ export function BoardCanvas(props: Props) {
           }}
         >
           <Layer key={props.fontsVersion}>
+            <ClusterLinks clusters={props.clusters} items={items} />
             {items.map((item) => (
               <Card key={item.id} item={item} {...props} />
+            ))}
+            {props.clusters.map((cluster) => (
+              <ClusterCard
+                key={cluster.id}
+                cluster={cluster}
+                items={items}
+                onAction={(action) => props.onClusterAction(cluster.id, action)}
+              />
             ))}
           </Layer>
         </Stage>
@@ -333,6 +351,184 @@ function MemoCard({ item, members, now }: { item: ViewItem; members: Map<string,
         ellipsis
       />
     </>
+  )
+}
+
+/** 클러스터 카드에서 묶인 카드들로 이어지는 가는 선 (목업의 클러스터 연결선 — 사용자가 긋는 연결선 F-10과는 별개) */
+function ClusterLinks({ clusters, items }: { clusters: BoardCluster[]; items: ViewItem[] }) {
+  const byId = new Map(items.map((i) => [i.id, i]))
+  return (
+    <>
+      {clusters.flatMap((cluster) => {
+        const { height } = clusterLayout(cluster.title, cluster.summary)
+        const cy = cluster.y + height / 2
+        return cluster.itemIds
+          .map((id) => byId.get(id))
+          .filter((item): item is ViewItem => Boolean(item))
+          .map((item) => (
+            <Line
+              key={`${cluster.id}-${item.id}`}
+              points={[cluster.x, cy, item.x, item.y]}
+              stroke="rgba(255,255,255,0.4)"
+              strokeWidth={1}
+              listening={false}
+            />
+          ))
+      })}
+    </>
+  )
+}
+
+/** 클러스터 카드 안의 버튼 (Konva에는 버튼이 없어 사각형+글자로 만든다) */
+function CanvasButton({
+  x,
+  y,
+  label,
+  primary,
+  onClick,
+}: {
+  x: number
+  y: number
+  label: string
+  primary?: boolean
+  onClick: () => void
+}) {
+  const width = measureTextWidth(label, 10.5) + 18
+  return (
+    <Group
+      x={x}
+      y={y}
+      onClick={(e) => {
+        e.cancelBubble = true
+        onClick()
+      }}
+      onTap={(e) => {
+        e.cancelBubble = true
+        onClick()
+      }}
+      onMouseDown={(e) => {
+        e.cancelBubble = true
+      }}
+      onMouseEnter={(e) => {
+        const container = e.target.getStage()?.container()
+        if (container) container.style.cursor = 'pointer'
+      }}
+      onMouseLeave={(e) => {
+        const container = e.target.getStage()?.container()
+        if (container) container.style.cursor = 'default'
+      }}
+    >
+      <Rect
+        width={width}
+        height={CLUSTER.buttonH}
+        cornerRadius={4}
+        fill={primary ? COLORS.white : 'transparent'}
+        stroke={primary ? undefined : 'rgba(255,255,255,0.3)'}
+        strokeWidth={1}
+      />
+      <Text
+        x={9}
+        y={(CLUSTER.buttonH - 10.5 * 1.2) / 2 + 1}
+        text={label}
+        fontSize={10.5}
+        fontFamily={FONT_SANS}
+        fontStyle={primary ? '600' : 'normal'}
+        fill={primary ? COLORS.black : 'rgba(255,255,255,0.7)'}
+      />
+    </Group>
+  )
+}
+
+/** AI 클러스터 카드 (F-08): 이슈 이름·요약·묶인 수, 자동 정렬/원래대로, 제안 무시 */
+function ClusterCard({
+  cluster,
+  items,
+  onAction,
+}: {
+  cluster: BoardCluster
+  items: ViewItem[]
+  onAction: (action: ClusterAction) => void
+}) {
+  const layout = clusterLayout(cluster.title, cluster.summary)
+  const members = items.filter((i) => cluster.itemIds.includes(i.id))
+  const arranged = members.some((i) => i.arranged)
+  const label = 'AI 클러스터'
+  const labelWidth = measureTextWidth(label, CHIP_FONT.size) + 2
+  const primary = arranged ? '원래대로' : '자동 정렬'
+  return (
+    <Group x={cluster.x - CLUSTER.width / 2} y={cluster.y}>
+      <Rect
+        width={CLUSTER.width}
+        height={layout.height}
+        fill={COLORS.black}
+        stroke="rgba(255,255,255,0.14)"
+        strokeWidth={1}
+        cornerRadius={7}
+        shadowColor="black"
+        shadowOpacity={0.4}
+        shadowBlur={28}
+        shadowOffsetY={12}
+      />
+      <Rect
+        x={CLUSTER.padX}
+        y={CLUSTER.padTop}
+        width={labelWidth + CHIP_FONT.padX * 2 + 2}
+        height={chipHeight() + 1}
+        stroke="rgba(255,255,255,0.35)"
+        strokeWidth={1}
+        cornerRadius={3}
+      />
+      <Text
+        x={CLUSTER.padX + CHIP_FONT.padX + 1}
+        y={CLUSTER.padTop + CHIP_FONT.padY + 1.5}
+        text={label}
+        fontSize={CHIP_FONT.size}
+        fontFamily={FONT_SANS}
+        fontStyle="600"
+        letterSpacing={0.6}
+        fill="rgba(255,255,255,0.85)"
+      />
+      <Text
+        x={CLUSTER.padX + labelWidth + CHIP_FONT.padX * 2 + 9}
+        y={CLUSTER.padTop + CHIP_FONT.padY + 1.5}
+        text={`기사 ${members.length}`}
+        fontSize={9.5}
+        fontFamily={FONT_SANS}
+        fill="rgba(255,255,255,0.55)"
+      />
+      <Text
+        x={CLUSTER.padX}
+        y={layout.titleY}
+        width={layout.width}
+        text={cluster.title}
+        fontSize={CLUSTER_TITLE_FONT.size}
+        fontFamily={CLUSTER_TITLE_FONT.family}
+        fontStyle={CLUSTER_TITLE_FONT.style}
+        lineHeight={CLUSTER_TITLE_FONT.lineHeight}
+        wrap="char"
+        fill={COLORS.white}
+      />
+      {cluster.summary && (
+        <Text
+          x={CLUSTER.padX}
+          y={layout.summaryY}
+          width={layout.width}
+          text={cluster.summary}
+          fontSize={CLUSTER_TEXT_FONT.size}
+          fontFamily={FONT_SANS}
+          lineHeight={CLUSTER_TEXT_FONT.lineHeight}
+          wrap="char"
+          fill="rgba(255,255,255,0.72)"
+        />
+      )}
+      <CanvasButton x={CLUSTER.padX} y={layout.buttonY} label={primary} primary onClick={() => onAction(arranged ? 'restore' : 'arrange')} />
+      <CanvasButton
+        x={CLUSTER.padX + measureTextWidth(primary, 10.5) + 18 + 6}
+        y={layout.buttonY}
+        label="제안 무시"
+        onClick={() => onAction('dismiss')}
+      />
+    </Group>
   )
 }
 

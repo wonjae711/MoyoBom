@@ -151,3 +151,19 @@ export function zoomAtCenter(view: View, scale: number, width: number, height: n
 export function toBoard(view: View, sx: number, sy: number) {
   return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }
 }
+
+/** AI 클러스터 카드 (목업의 "AI 클러스터" 카드 — 검은 바탕, 흰 글자, 명조 제목) */
+export const FONT_SERIF = "'Nanum Myeongjo', serif"
+export const CLUSTER = { width: 252, padX: 15, padTop: 13, padBottom: 12, chipGap: 9, titleGap: 8, buttonGap: 11, buttonH: 22 }
+export const CLUSTER_TITLE_FONT = { size: 14, lineHeight: 1.4, style: 'bold', family: FONT_SERIF }
+export const CLUSTER_TEXT_FONT = { size: 11, lineHeight: 1.5 }
+
+export function clusterLayout(title: string, summary: string) {
+  const width = CLUSTER.width - CLUSTER.padX * 2
+  const titleY = CLUSTER.padTop + chipHeight() + CLUSTER.chipGap
+  const titleH = measureTextHeight(title, width, CLUSTER_TITLE_FONT)
+  const summaryY = titleY + titleH + CLUSTER.titleGap
+  const summaryH = summary ? measureTextHeight(summary, width, CLUSTER_TEXT_FONT) : 0
+  const buttonY = summaryY + summaryH + (summary ? CLUSTER.buttonGap : 2)
+  return { width, titleY, titleH, summaryY, summaryH, buttonY, height: buttonY + CLUSTER.buttonH + CLUSTER.padBottom }
+}

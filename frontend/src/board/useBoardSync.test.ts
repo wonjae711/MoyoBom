@@ -62,6 +62,7 @@ function item(id: string, version: number, x = 0): BoardItem {
     createdBy: '1',
     updatedAt: '2026-10-04T00:00:00.000Z',
     version,
+    arranged: false,
   }
 }
 
@@ -71,6 +72,7 @@ function snapshot(seq: number, items: BoardItem[]): BoardSnapshot {
     role: 'owner',
     members: [{ userId: '1', nickname: '주인', role: 'owner' }],
     items,
+    clusters: [],
   }
 }
 
@@ -236,6 +238,24 @@ describe('[F-05] 보드 실시간 동기화 훅', () => {
     act(() => fake.socket.fire('card:added', { boardId: '7', item: created }))
     expect(result.current.items.map((i) => i.id)).toEqual(['40'])
     vi.unstubAllGlobals()
+  })
+
+  it('[F-08] 클러스터 목록은 순번이 큰 소식만 받아들이고, join 전에 온 소식은 스냅샷보다 새것일 때만 쓴다', async () => {
+    const cluster = (id: string) => ({ id, title: `이슈 ${id}`, summary: '', x: 0, y: 0, itemIds: [] })
+    const { result } = renderHook(() => useBoardSync('7'))
+    act(() => fake.socket.fire('connect'))
+    act(() => fake.socket.fire('board:clusters', { boardId: '7', seq: 12, clusters: [cluster('a')] }))
+    await act(async () => {
+      fake.reply('board:join', { ok: true, snapshot: { ...snapshot(10, []), clusters: [cluster('old')] } })
+    })
+    await flush()
+    expect(result.current.clusters.map((c) => c.id)).toEqual(['a'])
+
+    act(() => {
+      fake.socket.fire('board:clusters', { boardId: '7', seq: 15, clusters: [cluster('b')] })
+      fake.socket.fire('board:clusters', { boardId: '7', seq: 14, clusters: [cluster('late')] }) // 늦게 온 옛 소식
+    })
+    expect(result.current.clusters.map((c) => c.id)).toEqual(['b'])
   })
 
   it('연결이 끊긴 상태에서의 변경은 저장하지 못했다고 바로 알린다', async () => {

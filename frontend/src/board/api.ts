@@ -1,5 +1,5 @@
 import { apiFetch } from '../api/client'
-import type { BoardItem, BoardSnapshot, BoardSummary } from './types'
+import type { BoardCluster, BoardItem, BoardSnapshot, BoardSummary } from './types'
 
 // 백엔드 backend/src/routes/boards.ts (F-05·F-06·F-07 초대)
 
@@ -78,6 +78,34 @@ export function addLink(boardId: string, url: string, x: number, y: number): Pro
 
 export function linkQuota(boardId: string): Promise<number> {
   return apiFetch<{ remaining: number }>(`/api/boards/${boardId}/links/quota`).then((r) => r.remaining)
+}
+
+export interface ClusterRunResult {
+  seq: number
+  clusters: BoardCluster[]
+  analyzed: number
+  excluded: number
+  remaining: number
+}
+
+/** AI 이슈 묶기 (F-08): 보드의 기사 카드를 분석해 클러스터를 새로 만든다 */
+export function runClusters(boardId: string): Promise<ClusterRunResult> {
+  return apiFetch<ClusterRunResult>(`/api/boards/${boardId}/clusters`, { method: 'POST' })
+}
+
+export function clusterQuota(boardId: string): Promise<number> {
+  return apiFetch<{ remaining: number }>(`/api/boards/${boardId}/clusters/quota`).then((r) => r.remaining)
+}
+
+export function dismissCluster(boardId: string, clusterId: string): Promise<void> {
+  return apiFetch(`/api/boards/${boardId}/clusters/${clusterId}`, { method: 'DELETE' })
+}
+
+/** "자동 정렬" / "원래대로": 옮겨진 카드들을 돌려준다 */
+export function moveCluster(boardId: string, clusterId: string, action: 'arrange' | 'restore'): Promise<BoardItem[]> {
+  return apiFetch<{ items: BoardItem[] }>(`/api/boards/${boardId}/clusters/${clusterId}/${action}`, { method: 'POST' }).then(
+    (r) => r.items,
+  )
 }
 
 export const inviteUrl = (token: string) => `${window.location.origin}/invite/${token}`

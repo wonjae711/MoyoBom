@@ -12,7 +12,9 @@ import { attachNewsFeed } from './realtime/newsFeed.js';
 import { attachBoardSync, type BoardNotifier } from './realtime/boardSync.js';
 import { BoardService } from './boards/service.js';
 import { AiQuota } from './ai/quota.js';
-import { createOpenAiSummarizer } from './ai/summarizer.js';
+import { createOpenAiClusterSummarizer, createOpenAiSummarizer } from './ai/summarizer.js';
+import { createOpenAiEmbedder } from './ai/embedder.js';
+import { ClusterService } from './clusters/service.js';
 import { LinkService } from './links/service.js';
 
 const env = loadEnv();
@@ -28,7 +30,17 @@ const notifier: BoardNotifier = {
   membersChanged: (...args) => boardNotifier.membersChanged(...args),
   memberRemoved: (...args) => boardNotifier.memberRemoved(...args),
   cardAdded: (...args) => boardNotifier.cardAdded(...args),
+  cardsMoved: (...args) => boardNotifier.cardsMoved(...args),
+  clustersChanged: (...args) => boardNotifier.clustersChanged(...args),
 };
+const clusters = new ClusterService({
+  pool,
+  boards,
+  embedder: createOpenAiEmbedder(env.OPENAI_API_KEY),
+  summarizer: createOpenAiClusterSummarizer({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
+  quota: new AiQuota(pool, { user: env.AI_CLUSTER_LIMIT_USER, ip: env.AI_CLUSTER_LIMIT_IP, total: env.AI_CLUSTER_LIMIT_TOTAL }),
+  threshold: env.CLUSTER_SIMILARITY_THRESHOLD,
+});
 const links = new LinkService({
   pool,
   boards,
@@ -57,7 +69,7 @@ const app = createApp({
           }
         : null,
   },
-  boards: { boards, notifier, links },
+  boards: { boards, notifier, links, clusters },
   appOrigin: env.APP_ORIGIN,
 });
 const server = createServer(app);

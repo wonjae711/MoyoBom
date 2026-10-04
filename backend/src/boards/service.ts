@@ -4,6 +4,7 @@ import type { CategoryCode } from '../news/types.js';
 import {
   BoardError,
   type BoardItem,
+  type BoardCluster,
   type BoardMember,
   type BoardRole,
   type BoardSnapshot,
@@ -27,6 +28,7 @@ interface ItemRow {
   created_by: string | null;
   updated_at: Date;
   version: string;
+  arranged: boolean;
   a_title: string | null;
   a_description: string | null;
   a_source: string | null;
@@ -38,6 +40,7 @@ interface ItemRow {
 const ITEM_COLUMNS = `
   bi.id, bi.item_type, bi.article_id, bi.content, bi.image_key, bi.position_x, bi.position_y,
   bi.rotation, bi.z_index, bi.created_by, bi.updated_at, bi.version::text AS version,
+  (bi.arranged_version IS NOT NULL) AS arranged,
   a.title AS a_title, a.description AS a_description, a.source AS a_source, a.category AS a_category,
   a.original_link AS a_original_link, a.published_at AS a_published_at`;
 
@@ -66,7 +69,21 @@ function toItem(row: ItemRow): BoardItem {
     createdBy: row.created_by,
     updatedAt: row.updated_at.toISOString(),
     version: Number(row.version),
+    arranged: row.arranged,
   };
+}
+
+/** 자동 정렬 배치: 클러스터 카드 오른쪽에 3열 격자 (목업의 tidy 배치와 같은 간격) */
+export function arrangedPosition(cluster: { x: number; y: number }, index: number): { x: number; y: number } {
+  return { x: cluster.x + 260 + (index % 3) * 232, y: cluster.y + Math.floor(index / 3) * 190 };
+}
+
+export interface NewCluster {
+  title: string;
+  summary: string;
+  x: number;
+  y: number;
+  itemIds: string[];
 }
 
 type Db = pg.Pool | pg.PoolClient;
@@ -204,6 +221,7 @@ export class BoardService {
          WHERE bi.board_id = $1 ORDER BY bi.z_index, bi.id`,
         [boardId],
       );
+      const clusters = await this.listClusters(boardId, client);
       await client.query('COMMIT');
       const b = board.rows[0]!;
       return {
@@ -211,6 +229,7 @@ export class BoardService {
         role,
         members: members.rows.map((m): BoardMember => ({ userId: m.user_id, nickname: m.nickname, role: m.role })),
         items: items.rows.map(toItem),
+        clusters,
       };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -422,5 +441,130 @@ export class BoardService {
       await this.log(client, boardId, userId, 'card:delete', { itemId });
       return { version: seq };
     });
+  }
+
+  // ---------- AI 클러스터 (F-08) ----------
+  // 클러스터를 바꾸는 작업도 bump()로 보드 변경 순번을 올린다 — 클라이언트는 순번이 큰 클러스터 목록만 받아들인다
+
+  async listClusters(boardId: string, db: Db = this.pool): Promise<BoardCluster[]> {
+    const { rows } = await db.query<{ id: string; title: string; summary: string; x: number; y: number; item_ids: string[] }>(
+      `SELECT c.id, c.title, c.summary, c.x, c.y,
+         coalesce(array_agg(ci.board_item_id::text ORDER BY ci.board_item_id) FILTER (WHERE ci.board_item_id IS NOT NULL), '{}') AS item_ids
+       FROM clusters c LEFT JOIN cluster_items ci ON ci.cluster_id = c.id
+       WHERE c.board_id = $1 GROUP BY c.id ORDER BY c.id`,
+      [boardId],
+    );
+    return rows.map((r) => ({ id: r.id, title: r.title, summary: r.summary, x: r.x, y: r.y, itemIds: r.item_ids }));
+  }
+
+  /** 보드의 클러스터를 새 분석 결과로 통째로 바꾼다. 분석 중 지워진 카드는 빠진다. 카드 좌표는 바꾸지 않는다 */
+  async replaceClusters(
+    boardId: string,
+    userId: string,
+    clusters: NewCluster[],
+  ): Promise<{ seq: number; clusters: BoardCluster[] }> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
+      await client.query('DELETE FROM clusters WHERE board_id = $1', [boardId]);
+      for (const cluster of clusters) {
+        const { rows } = await client.query<{ id: string }>(
+          'INSERT INTO clusters (board_id, title, summary, x, y, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [boardId, cluster.title, cluster.summary, cluster.x, cluster.y, userId],
+        );
+        await client.query(
+          `INSERT INTO cluster_items (cluster_id, board_item_id)
+           SELECT $1, bi.id FROM board_items bi WHERE bi.board_id = $2 AND bi.id = ANY($3::bigint[])
+           ON CONFLICT (board_item_id) DO NOTHING`,
+          [rows[0]!.id, boardId, cluster.itemIds],
+        );
+      }
+      await this.log(client, boardId, userId, 'clusters:replace', { count: clusters.length });
+      return { seq, clusters: await this.listClusters(boardId, client) };
+    });
+  }
+
+  /** "제안 무시": 클러스터만 지우고 카드는 그대로 둔다 */
+  async dismissCluster(boardId: string, userId: string, clusterId: string): Promise<{ seq: number; clusters: BoardCluster[] }> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
+      const { rowCount } = await client.query('DELETE FROM clusters WHERE board_id = $1 AND id = $2', [boardId, clusterId]);
+      if (!rowCount) throw new BoardError('not_found', '이미 사라진 클러스터입니다');
+      await this.log(client, boardId, userId, 'cluster:dismiss', { clusterId });
+      return { seq, clusters: await this.listClusters(boardId, client) };
+    });
+  }
+
+  /**
+   * "자동 정렬": 클러스터의 카드를 클러스터 카드 옆 격자로 옮긴다 (F-08 처리 로직 6).
+   * 옮기기 전 좌표를 prev_position에 저장한다. 이미 정렬된 상태라 저장된 좌표가 있으면 그 원래 좌표를 지킨다
+   */
+  async arrangeCluster(boardId: string, userId: string, clusterId: string): Promise<BoardItem[]> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
+      const cluster = await this.clusterOf(client, boardId, clusterId);
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT bi.id FROM cluster_items ci JOIN board_items bi ON bi.id = ci.board_item_id
+         WHERE ci.cluster_id = $1 ORDER BY bi.id`,
+        [clusterId],
+      );
+      const items: BoardItem[] = [];
+      for (const [index, row] of rows.entries()) {
+        const to = arrangedPosition(cluster, index);
+        await client.query(
+          `UPDATE board_items SET
+             prev_position_x = coalesce(prev_position_x, position_x), prev_position_y = coalesce(prev_position_y, position_y),
+             position_x = $2, position_y = $3, version = $4, arranged_version = $4, updated_at = now()
+           WHERE id = $1`,
+          [row.id, to.x, to.y, seq],
+        );
+        items.push(await this.selectItem(client, boardId, row.id));
+      }
+      await this.log(client, boardId, userId, 'cluster:arrange', { clusterId, count: items.length });
+      return items;
+    });
+  }
+
+  /**
+   * "원래대로": 자동 정렬 뒤 아무도 손대지 않은 카드만 정렬 전 좌표로 되돌린다.
+   * 그 사이 누가 직접 옮긴 카드는 그 자리에 둔다 — 사람의 배치가 AI 배치보다 우선 (C-05 기본안, 설계 원칙 'AI는 보조 도구')
+   */
+  async restoreCluster(boardId: string, userId: string, clusterId: string): Promise<BoardItem[]> {
+    return this.tx(async (client) => {
+      await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
+      await this.clusterOf(client, boardId, clusterId);
+      const { rows } = await client.query<{ id: string }>(
+        `UPDATE board_items bi SET
+           position_x = bi.prev_position_x, position_y = bi.prev_position_y, version = $2, updated_at = now(),
+           prev_position_x = NULL, prev_position_y = NULL, arranged_version = NULL
+         FROM cluster_items ci
+         WHERE ci.cluster_id = $1 AND bi.id = ci.board_item_id
+           AND bi.arranged_version IS NOT NULL AND bi.version = bi.arranged_version AND bi.prev_position_x IS NOT NULL
+         RETURNING bi.id`,
+        [clusterId, seq],
+      );
+      // 손으로 옮긴 카드는 위치는 두고 "정렬됨" 표시만 지운다 (화면 위치가 바뀌지 않으므로 알릴 필요 없음)
+      await client.query(
+        `UPDATE board_items bi SET prev_position_x = NULL, prev_position_y = NULL, arranged_version = NULL
+         FROM cluster_items ci WHERE ci.cluster_id = $1 AND bi.id = ci.board_item_id AND bi.arranged_version IS NOT NULL`,
+        [clusterId],
+      );
+      const items: BoardItem[] = [];
+      for (const row of rows) items.push(await this.selectItem(client, boardId, row.id));
+      await this.log(client, boardId, userId, 'cluster:restore', { clusterId, count: items.length });
+      return items;
+    });
+  }
+
+  private async clusterOf(client: pg.PoolClient, boardId: string, clusterId: string) {
+    const { rows } = await client.query<{ x: number; y: number }>('SELECT x, y FROM clusters WHERE board_id = $1 AND id = $2', [
+      boardId,
+      clusterId,
+    ]);
+    if (!rows[0]) throw new BoardError('not_found', '이미 사라진 클러스터입니다');
+    return rows[0];
   }
 }

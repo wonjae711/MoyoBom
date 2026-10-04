@@ -17,11 +17,12 @@ function item(id: string, version: number, x = 0, zIndex = version): BoardItem {
     createdBy: '1',
     updatedAt: '2026-10-04T00:00:00.000Z',
     version,
+    arranged: false,
   }
 }
 
 function snapshot(seq: number, items: BoardItem[]): BoardSnapshot {
-  return { board: { id: '1', title: 'b', ownerId: '1', updatedAt: '', seq }, role: 'owner', members: [], items }
+  return { board: { id: '1', title: 'b', ownerId: '1', updatedAt: '', seq }, role: 'owner', members: [], items, clusters: [] }
 }
 
 const upsert = (i: BoardItem): BoardEvent => ({ kind: 'upsert', item: i })

@@ -3,8 +3,8 @@ import { Link, useParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { FeedArticle } from '../feed/types'
 import { useNow, useToast } from '../ui/hooks'
-import { getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
-import { BoardCanvas } from './BoardCanvas'
+import { clusterQuota, getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
+import { BoardCanvas, type ClusterAction } from './BoardCanvas'
 import { BoardMenu, MembersButton } from './BoardManage'
 import { MEMO, MEMO_FONT, clearMeasureCache, fitView, toBoard, zoomAtCenter, type View } from './cardLayout'
 import { FeedPanel } from './FeedPanel'
@@ -33,6 +33,14 @@ export function BoardPage() {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [fontsVersion, setFontsVersion] = useState(0)
   const [linkRemaining, setLinkRemaining] = useState<number | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [clusterRemaining, setClusterRemaining] = useState<number | null>(null)
+
+  useEffect(() => {
+    clusterQuota(boardId)
+      .then(setClusterRemaining)
+      .catch(() => setClusterRemaining(null))
+  }, [boardId])
 
   useEffect(() => {
     linkQuota(boardId)
@@ -110,6 +118,37 @@ export function BoardPage() {
       throw error
     }
   }
+
+  /** AI 이슈 묶기 (F-08) */
+  const analyze = async () => {
+    setAnalyzing(true)
+    try {
+      const result = await board.analyze()
+      setClusterRemaining(result.remaining)
+      toast.show(
+        result.clusters.length === 0
+          ? '아직 같은 이슈로 묶을 만한 기사가 없습니다'
+          : `이슈 ${result.clusters.length}개로 묶었습니다${result.excluded ? ` (분석 못 한 기사 ${result.excluded}개)` : ''}`,
+      )
+    } catch (error) {
+      toast.show(error instanceof ApiError ? error.message : 'AI 분석에 실패했습니다')
+      clusterQuota(boardId).then(setClusterRemaining).catch(() => {})
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const onClusterAction = (clusterId: string, action: ClusterAction) => {
+    if (action === 'dismiss') {
+      void board.dismiss(clusterId).then(() => toast.show('AI 제안을 무시했습니다'))
+      return
+    }
+    void board.arrange(clusterId, action).then((count) => {
+      if (action === 'restore' && count === 0) toast.show('되돌릴 카드가 없습니다 (직접 옮긴 카드는 그 자리에 둡니다)')
+    })
+  }
+
+  const articleCount = board.items.filter((i) => i.type === 'article' && !i.id.startsWith('tmp-')).length
 
   const addMemo = () => {
     const at = viewCenter()
@@ -193,6 +232,8 @@ export function BoardPage() {
         <main className="board-main">
           <BoardCanvas
             items={board.items}
+            clusters={board.clusters}
+            onClusterAction={onClusterAction}
             members={members}
             view={view}
             onViewChange={(v) => {
@@ -220,6 +261,20 @@ export function BoardPage() {
             </button>
             <button type="button" onClick={removeSelected} disabled={!selectedId || selectedId.startsWith('tmp-')}>
               선택 삭제
+            </button>
+            <button
+              type="button"
+              onClick={() => void analyze()}
+              disabled={board.status !== 'ready' || analyzing || articleCount < 2}
+              title={
+                articleCount < 2
+                  ? '기사 카드가 2개 이상 있어야 합니다'
+                  : clusterRemaining !== null
+                    ? `오늘 남은 분석 ${clusterRemaining}회`
+                    : undefined
+              }
+            >
+              {analyzing ? 'AI 분석 중…' : 'AI 이슈 묶기'}
             </button>
           </div>
           <div className="board-toolbar board-toolbar--right">

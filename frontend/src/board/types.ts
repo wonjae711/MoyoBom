@@ -43,6 +43,18 @@ export interface BoardItem {
   updatedAt: string
   /** 마지막으로 바뀐 때의 보드 변경 순번 — 순서 비교는 updatedAt이 아니라 이 값으로 한다 */
   version: number
+  /** AI 자동 정렬로 옮겨져 "원래대로" 되돌릴 수 있는 상태 (F-08) */
+  arranged: boolean
+}
+
+/** AI 이슈 클러스터 (F-08) */
+export interface BoardCluster {
+  id: string
+  title: string
+  summary: string
+  x: number
+  y: number
+  itemIds: string[]
 }
 
 export interface BoardSnapshot {
@@ -50,4 +62,5 @@ export interface BoardSnapshot {
   role: BoardRole
   members: BoardMember[]
   items: BoardItem[]
+  clusters: BoardCluster[]
 }

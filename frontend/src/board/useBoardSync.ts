@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import { addLink as postLink, getBoard } from './api'
+import { addLink as postLink, dismissCluster, getBoard, moveCluster, runClusters } from './api'
 import { refreshSession } from '../api/client'
 import type { FeedArticle } from '../feed/types'
 import { applyEvent, emptyBoardState, fromSnapshot, stackedItems, type BoardEvent, type BoardState } from './boardState'
-import type { BoardItem, BoardMember, BoardRole, BoardSnapshot } from './types'
+import type { BoardCluster, BoardItem, BoardMember, BoardRole, BoardSnapshot } from './types'
 
 /** 서버 ack를 기다리는 최대 시간 */
 const ACK_TIMEOUT_MS = 8000
@@ -59,6 +59,10 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
   const [title, setTitle] = useState('')
   const [role, setRole] = useState<BoardRole>('editor')
   const [members, setMembers] = useState<BoardMember[]>([])
+  /** AI 클러스터 목록과 그 목록의 보드 변경 순번 (순번이 큰 목록만 받아들인다) */
+  const [clusters, setClusters] = useState<{ seq: number; list: BoardCluster[] }>({ seq: 0, list: [] })
+  /** join 응답 전에 온 클러스터 소식 (스냅샷보다 새것이면 적용) */
+  const pendingClusters = useRef<{ seq: number; list: BoardCluster[] } | null>(null)
 
   const socketRef = useRef<Socket | null>(null)
   /** join ack 전에 받은 이벤트 (null이면 바로 적용) */
@@ -86,6 +90,13 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
   const applySnapshot = useCallback((snapshot: BoardSnapshot) => {
     setServer(fromSnapshot(snapshot, buffer.current ?? []))
     buffer.current = null
+    const pending = pendingClusters.current
+    pendingClusters.current = null
+    setClusters(
+      pending && pending.seq > snapshot.board.seq
+        ? pending
+        : { seq: snapshot.board.seq, list: snapshot.clusters ?? [] },
+    )
     setTitle(snapshot.board.title)
     setRole(snapshot.role)
     setMembers(snapshot.members)
@@ -141,6 +152,13 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     socket.on('card:moving', (d: { boardId: string; itemId: string; x: number; y: number }) => {
       if (!mine(d)) return
       setRemoteDrag((prev) => new Map(prev).set(d.itemId, { x: d.x, y: d.y, at: Date.now() }))
+    })
+    socket.on('board:clusters', (d: { boardId: string; seq: number; clusters: BoardCluster[] }) => {
+      if (!mine(d)) return
+      const next = { seq: d.seq, list: d.clusters }
+      if (buffer.current) {
+        if (!pendingClusters.current || next.seq > pendingClusters.current.seq) pendingClusters.current = next
+      } else setClusters((prev) => (next.seq > prev.seq ? next : prev))
     })
     socket.on('board:renamed', (d: { boardId: string; title: string }) => mine(d) && setTitle(d.title))
     socket.on('board:members-changed', (d: { boardId: string }) => {
@@ -242,6 +260,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
         createdBy: null,
         updatedAt: new Date().toISOString(),
         version: 0,
+        arranged: false,
       }
       setOverlays((prev) => ({ ...prev, adds: new Map(prev.adds).set(clientId, temp) }))
       const payload =
@@ -338,6 +357,44 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     [boardId, settle],
   )
 
+  /** AI 이슈 묶기 (F-08). 결과 목록을 바로 반영한다 (같은 소식이 board:clusters로 와도 순번 규칙으로 한 번만) */
+  const analyze = useCallback(async () => {
+    const result = await runClusters(boardId)
+    setClusters((prev) => (result.seq > prev.seq ? { seq: result.seq, list: result.clusters } : prev))
+    return result
+  }, [boardId])
+
+  /** "제안 무시": 화면에서 먼저 빼고, 서버 소식(board:clusters)으로 확정 */
+  const dismiss = useCallback(
+    async (clusterId: string) => {
+      setClusters((prev) => ({ ...prev, list: prev.list.filter((c) => c.id !== clusterId) }))
+      try {
+        await dismissCluster(boardId, clusterId)
+      } catch {
+        fail('제안을 지우지 못했습니다')
+        getBoard(boardId)
+          .then((s) => setClusters((prev) => (s.board.seq >= prev.seq ? { seq: s.board.seq, list: s.clusters } : prev)))
+          .catch(() => {})
+      }
+    },
+    [boardId, fail],
+  )
+
+  /** "자동 정렬" / "원래대로" — 옮겨진 카드를 서버 결과로 반영 */
+  const arrange = useCallback(
+    async (clusterId: string, action: 'arrange' | 'restore') => {
+      try {
+        const moved = await moveCluster(boardId, clusterId, action)
+        moved.forEach(settle)
+        return moved.length
+      } catch {
+        fail(action === 'arrange' ? '자동 정렬하지 못했습니다' : '원래대로 되돌리지 못했습니다')
+        return 0
+      }
+    },
+    [boardId, settle, fail],
+  )
+
   const saving = overlays.adds.size + overlays.moves.size + overlays.memos.size + overlays.deleting.size > 0
 
   return {
@@ -354,5 +411,9 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     updateMemo,
     deleteCard,
     addLink,
+    clusters: clusters.list,
+    analyze,
+    dismiss,
+    arrange,
   }
 }

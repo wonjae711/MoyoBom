@@ -1,7 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import type { BoardService } from '../boards/service.js';
-import { BoardError, type BoardItem } from '../boards/types.js';
+import { BoardError, type BoardCluster, type BoardItem } from '../boards/types.js';
 
 export const boardRoom = (boardId: string) => `board:${boardId}`;
 
@@ -40,6 +40,10 @@ export interface BoardNotifier {
   memberRemoved(boardId: string, userId: string): Promise<void>;
   /** REST로 추가된 카드(링크 요약 F-03)를 접속 중인 모두에게 알린다 — 요청한 사람에게도 가지만 version 규칙으로 한 번만 반영된다 */
   cardAdded(boardId: string, item: BoardItem, by: string): void;
+  /** 자동 정렬·원래대로로 한꺼번에 옮겨진 카드들 (F-08) */
+  cardsMoved(boardId: string, items: BoardItem[], by: string): void;
+  /** 클러스터 목록이 바뀜 (F-08). seq가 큰 목록만 받아들이도록 함께 보낸다 */
+  clustersChanged(boardId: string, seq: number, clusters: BoardCluster[]): void;
 }
 
 /**
@@ -146,6 +150,12 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
     },
     cardAdded(boardId, item, by) {
       io.to(boardRoom(boardId)).emit('card:added', { boardId, item, by });
+    },
+    cardsMoved(boardId, items, by) {
+      for (const item of items) io.to(boardRoom(boardId)).emit('card:moved', { boardId, item, by });
+    },
+    clustersChanged(boardId, seq, clusters) {
+      io.to(boardRoom(boardId)).emit('board:clusters', { boardId, seq, clusters });
     },
     async memberRemoved(boardId, removedUserId) {
       const sockets = await io.in(boardRoom(boardId)).fetchSockets();

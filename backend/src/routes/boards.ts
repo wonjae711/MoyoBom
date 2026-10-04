@@ -5,6 +5,8 @@ import { BoardError, type BoardErrorCode } from '../boards/types.js';
 import { LinkError, type LinkErrorCode } from '../links/safeFetch.js';
 import { QuotaError, UnreadableError, type LinkService } from '../links/service.js';
 import { SummaryError } from '../ai/summarizer.js';
+import { EmbeddingError } from '../ai/embedder.js';
+import { ClusterBusyError, type ClusterService } from '../clusters/service.js';
 import type { BoardNotifier } from '../realtime/boardSync.js';
 
 const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요').max(50) });
@@ -17,6 +19,8 @@ export interface BoardRouteDeps {
   notifier: BoardNotifier;
   /** 링크 요약(F-03). 없으면 해당 API는 503 */
   links?: LinkService;
+  /** AI 클러스터링(F-08). 없으면 해당 API는 503 */
+  clusters?: ClusterService;
 }
 
 const coord = z.number().finite().min(-1_000_000).max(1_000_000);
@@ -43,12 +47,16 @@ function badTitle(res: Response, error: z.ZodError): void {
 }
 
 /** /api/boards — 보드 목록·생성·조회·수정·삭제(F-05·F-06), 초대 링크·멤버 관리(F-07). 모두 로그인 필요 */
-export function createBoardsRouter({ boards, notifier, links }: BoardRouteDeps): Router {
+export function createBoardsRouter({ boards, notifier, links, clusters }: BoardRouteDeps): Router {
   const router = Router();
 
   router.param('boardId', (_req, res, next, value: string) => {
     if (isId(value)) next();
     else res.status(404).json({ error: '보드를 찾을 수 없습니다', code: 'not_found' });
+  });
+  router.param('clusterId', (_req, res, next, value: string) => {
+    if (isId(value)) next();
+    else res.status(404).json({ error: '이미 사라진 클러스터입니다', code: 'not_found' });
   });
 
   router.get('/', async (_req, res) => {
@@ -128,6 +136,58 @@ export function createBoardsRouter({ boards, notifier, links }: BoardRouteDeps):
       sendError(res, error);
     }
   });
+
+  // ---------- AI 클러스터링 (F-08) — 보드 멤버 누구나 (C-05 기본안) ----------
+
+  router.get('/:boardId/clusters/quota', async (_req, res) => {
+    if (!clusters) return void res.status(503).json({ error: 'AI 분석을 사용할 수 없습니다' });
+    res.json({ remaining: await clusters.remaining(res.locals.userId!) });
+  });
+
+  /** 보드의 기사 카드를 분석해 이슈별로 묶고 요약한다. 기존 클러스터는 새 결과로 바뀐다 */
+  router.post('/:boardId/clusters', async (req, res) => {
+    if (!clusters) return void res.status(503).json({ error: 'AI 분석을 사용할 수 없습니다' });
+    try {
+      const result = await clusters.run(req.params.boardId, res.locals.userId!, req.ip ?? 'unknown');
+      notifier.clustersChanged(req.params.boardId, result.seq, result.clusters);
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof ClusterBusyError) return void res.status(409).json({ error: error.message, code: 'busy' });
+      if (error instanceof QuotaError) return void res.status(429).json({ error: error.message, code: 'quota', scope: error.scope });
+      if (error instanceof EmbeddingError) {
+        console.error('[clusters] 임베딩 실패:', error.message);
+        return void res.status(502).json({ error: 'AI 분석에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'ai_failed' });
+      }
+      sendError(res, error);
+    }
+  });
+
+  /** "제안 무시": 클러스터만 지운다 */
+  router.delete('/:boardId/clusters/:clusterId', async (req, res) => {
+    try {
+      const result = await boards.dismissCluster(req.params.boardId, res.locals.userId!, req.params.clusterId);
+      notifier.clustersChanged(req.params.boardId, result.seq, result.clusters);
+      res.status(204).end();
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  /** "자동 정렬" / "원래대로" — 옮겨진 카드를 돌려주고 접속 중인 모두에게 알린다 */
+  for (const [action, run] of [
+    ['arrange', (b: string, u: string, c: string) => boards.arrangeCluster(b, u, c)],
+    ['restore', (b: string, u: string, c: string) => boards.restoreCluster(b, u, c)],
+  ] as const) {
+    router.post(`/:boardId/clusters/:clusterId/${action}`, async (req, res) => {
+      try {
+        const items = await run(req.params.boardId, res.locals.userId!, req.params.clusterId);
+        notifier.cardsMoved(req.params.boardId, items, res.locals.userId!);
+        res.json({ items });
+      } catch (error) {
+        sendError(res, error);
+      }
+    });
+  }
 
   /** owner만: 현재 초대 링크 (없으면 새로 만듦) */
   router.get('/:boardId/invite', async (req, res) => {

@@ -55,6 +55,10 @@ export function recordingNotifier() {
       membersChanged: (boardId: string) => void calls.push(['membersChanged', boardId]),
       memberRemoved: async (boardId: string, userId: string) => void calls.push(['memberRemoved', boardId, userId]),
       cardAdded: (boardId: string, item: { id: string }, by: string) => void calls.push(['cardAdded', boardId, item.id, by]),
+      cardsMoved: (boardId: string, items: { id: string }[], by: string) =>
+        void calls.push(['cardsMoved', boardId, items.map((i) => i.id).join(','), by]),
+      clustersChanged: (boardId: string, seq: number, clusters: { id: string }[]) =>
+        void calls.push(['clustersChanged', boardId, String(clusters.length)]),
     },
   };
 }

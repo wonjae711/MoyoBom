@@ -44,6 +44,18 @@ export interface BoardItem {
   updatedAt: string;
   /** 마지막으로 바뀐 때의 보드 변경 순번 (L-02). 클라이언트는 더 큰 version만 적용한다 */
   version: number;
+  /** AI 자동 정렬로 옮겨져 "원래대로" 되돌릴 수 있는 상태 (F-08) */
+  arranged: boolean;
+}
+
+/** AI 이슈 클러스터 (F-08). 카드 묶음과 AI 요약, 보드 위 클러스터 카드 위치 */
+export interface BoardCluster {
+  id: string;
+  title: string;
+  summary: string;
+  x: number;
+  y: number;
+  itemIds: string[];
 }
 
 /** 보드에 들어오거나 다시 연결했을 때 받는 전체 상태 */
@@ -53,6 +65,7 @@ export interface BoardSnapshot {
   role: BoardRole;
   members: BoardMember[];
   items: BoardItem[];
+  clusters: BoardCluster[];
 }
 
 export type BoardErrorCode = 'not_found' | 'forbidden' | 'invalid' | 'invite_invalid';
