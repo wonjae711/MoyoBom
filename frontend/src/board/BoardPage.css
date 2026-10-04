@@ -501,3 +501,74 @@
 .board-gone .btn {
   text-decoration: none;
 }
+
+/* ---------- 참여자·보드 설정 ---------- */
+
+.members__trigger {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.members {
+  width: 280px;
+}
+
+.members__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.members__list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+}
+
+.members__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.members__role {
+  font-size: 10.5px;
+  color: var(--color-gray-mid);
+}
+
+.board-menu {
+  width: 260px;
+}
+
+.board-menu__items {
+  display: flex;
+  flex-direction: column;
+}
+
+.board-menu__items button {
+  padding: 9px 4px;
+  border: none;
+  border-bottom: 1px solid var(--color-gray-light);
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.board-menu__items button:last-of-type {
+  border-bottom: none;
+}
+
+.board-menu__items button:hover {
+  background: var(--color-off-white);
+}
+
+.board-menu__danger {
+  font-weight: 600;
+}

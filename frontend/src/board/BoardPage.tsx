@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { FeedArticle } from '../feed/types'
-import { Avatars } from '../ui/Avatars'
 import { useNow, useToast } from '../ui/hooks'
 import { getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
 import { BoardCanvas } from './BoardCanvas'
+import { BoardMenu, MembersButton } from './BoardManage'
 import { MEMO, MEMO_FONT, clearMeasureCache, fitView, toBoard, zoomAtCenter, type View } from './cardLayout'
 import { FeedPanel } from './FeedPanel'
 import { useBoardSync, type BoardStatus } from './useBoardSync'
@@ -177,7 +177,8 @@ export function BoardPage() {
           </div>
         </div>
         <div className="board-header__spacer" />
-        <Avatars names={board.members.map((m) => m.nickname)} />
+        <MembersButton boardId={boardId} members={board.members} role={board.role} onMessage={toast.show} />
+        {board.role === 'owner' && <BoardMenu boardId={boardId} title={board.title} onMessage={toast.show} />}
         {board.role === 'owner' && <InviteButton boardId={boardId} onMessage={toast.show} />}
       </header>
 

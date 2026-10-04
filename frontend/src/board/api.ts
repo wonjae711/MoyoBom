@@ -46,6 +46,21 @@ export function acceptInvite(token: string): Promise<{ boardId: string; joined: 
   return apiFetch(`/api/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' })
 }
 
+/** owner만: 보드 이름 바꾸기 (접속 중인 사람에게는 board:renamed로 알려짐) */
+export function renameBoard(boardId: string, title: string): Promise<void> {
+  return apiFetch(`/api/boards/${boardId}`, { method: 'PATCH', body: JSON.stringify({ title }) })
+}
+
+/** owner만: 보드 삭제 */
+export function deleteBoard(boardId: string): Promise<void> {
+  return apiFetch(`/api/boards/${boardId}`, { method: 'DELETE' })
+}
+
+/** owner는 편집자를 내보내고, 편집자는 자기 자신을 지정하면 나간다 */
+export function removeMember(boardId: string, userId: string): Promise<void> {
+  return apiFetch(`/api/boards/${boardId}/members/${userId}`, { method: 'DELETE' })
+}
+
 export interface LinkResult {
   item: BoardItem
   /** 이미 저장된 기사를 다시 씀 (AI 호출 없음) */
