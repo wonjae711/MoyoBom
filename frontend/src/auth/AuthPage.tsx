@@ -1,8 +1,16 @@
-import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router'
-import { ApiError } from '../api/client'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { ApiError, apiFetch } from '../api/client'
 import { useAuth } from './useAuth'
 import './AuthPage.css'
+
+/** 소셜 로그인에서 돌아왔을 때 주소의 ?error= 값 → 안내 문구 */
+const SOCIAL_ERRORS: Record<string, string> = {
+  kakao_cancelled: '카카오 로그인을 취소했습니다',
+  kakao_invalid: '로그인 요청이 만료되었거나 올바르지 않습니다. 다시 시도해 주세요',
+  kakao_failed: '카카오 로그인 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요',
+  kakao_unavailable: '카카오 로그인을 아직 사용할 수 없습니다',
+}
 
 const FIELD_MESSAGES: Record<string, string> = {
   email: '올바른 이메일 주소를 입력해 주세요',
@@ -20,8 +28,16 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [searchParams] = useSearchParams()
+  const [error, setError] = useState<string | null>(() => SOCIAL_ERRORS[searchParams.get('error') ?? ''] ?? null)
   const [submitting, setSubmitting] = useState(false)
+  const [providers, setProviders] = useState({ kakao: false, naver: false })
+
+  useEffect(() => {
+    apiFetch<{ kakao: boolean; naver: boolean }>('/api/auth/providers')
+      .then(setProviders)
+      .catch(() => {})
+  }, [])
 
   if (user) return <Navigate to={from} replace />
 
@@ -96,9 +112,14 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
           </button>
 
           <div className="auth__divider">또는</div>
-          {/* 소셜 로그인은 카카오·네이버 키 발급 후 연결 (F-07 2단계) */}
-          <button className="auth__social auth__social--kakao" type="button" disabled title="준비 중">
-            카카오로 계속하기 (준비 중)
+          {/* 소셜 로그인은 서버 주소로 직접 이동한다 (카카오 인가 페이지 → 콜백 → 로그인 쿠키 발급 후 화면으로 복귀) */}
+          <button
+            className="auth__social auth__social--kakao"
+            type="button"
+            disabled={!providers.kakao}
+            onClick={() => window.location.assign('/api/auth/kakao')}
+          >
+            {providers.kakao ? '카카오로 계속하기' : '카카오로 계속하기 (준비 중)'}
           </button>
           <button className="auth__social auth__social--naver" type="button" disabled title="준비 중">
             네이버로 계속하기 (준비 중)

@@ -6,6 +6,9 @@ import { z } from 'zod';
 // 이미 설정된 환경 변수는 덮어쓰지 않는다.
 config({ path: resolve(import.meta.dirname, '../../../.env'), quiet: true });
 
+/** 빈 문자열("KEY=")은 값이 없는 것으로 본다 */
+const optionalString = z.preprocess((value) => (value === '' ? undefined : value), z.string().min(1).optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -20,6 +23,10 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   /** 화면 주소. 쿠키 인증 요청·소켓 연결의 Origin 확인에 쓴다 */
   APP_ORIGIN: z.url().default('http://localhost:5173'),
+
+  /** 카카오 로그인 (선택). 없으면 카카오 로그인 버튼이 "준비 중"으로 표시된다 */
+  KAKAO_REST_API_KEY: optionalString,
+  KAKAO_CLIENT_SECRET: optionalString,
 
   NAVER_CLIENT_ID: z.string().min(1),
   NAVER_CLIENT_SECRET: z.string().min(1),

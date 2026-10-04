@@ -119,6 +119,15 @@
   cursor: not-allowed;
 }
 
+/* 카카오 로그인 버튼 디자인 가이드: 노란 배경(#FEE500) + 검정 글자 */
+.auth__social--kakao:enabled {
+  border-color: #fee500;
+  background: #fee500;
+  color: rgba(0, 0, 0, 0.85);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .auth__switch {
   margin: 4px 0 0;
   text-align: center;

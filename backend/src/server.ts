@@ -13,14 +13,25 @@ import { attachNewsFeed } from './realtime/newsFeed.js';
 const env = loadEnv();
 const pool = createPool(env.DATABASE_URL);
 const newsEvents = new NewsEvents();
+const authService = new AuthService({ pool, jwtSecret: env.JWT_SECRET });
+const cookies = { secure: env.NODE_ENV === 'production' };
 const app = createApp({
   checkDb: () => pingDb(pool),
   articles: { listFeed: (query) => listFeed(pool, query) },
-  auth: {
-    auth: new AuthService({ pool, jwtSecret: env.JWT_SECRET }),
-    loginLimiter: new LoginRateLimiter(),
-    jwtSecret: env.JWT_SECRET,
-    cookies: { secure: env.NODE_ENV === 'production' },
+  auth: { auth: authService, loginLimiter: new LoginRateLimiter(), jwtSecret: env.JWT_SECRET, cookies },
+  oauth: {
+    auth: authService,
+    cookies,
+    appOrigin: env.APP_ORIGIN,
+    kakao:
+      env.KAKAO_REST_API_KEY && env.KAKAO_CLIENT_SECRET
+        ? {
+            restApiKey: env.KAKAO_REST_API_KEY,
+            clientSecret: env.KAKAO_CLIENT_SECRET,
+            // 카카오 콘솔에 등록한 리다이렉트 URI와 정확히 같아야 한다 (KOE006)
+            redirectUri: `${env.APP_ORIGIN}/api/auth/kakao/callback`,
+          }
+        : null,
   },
   appOrigin: env.APP_ORIGIN,
 });

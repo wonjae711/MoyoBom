@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import { LoginRateLimiter } from '../auth/rateLimit.js';
 import { AuthService } from '../auth/service.js';
-import { TEST_APP_ORIGIN, TEST_JWT_SECRET } from '../test/auth.js';
+import { TEST_APP_ORIGIN, TEST_JWT_SECRET, fakeOAuthDeps } from '../test/auth.js';
 import { createTestPool, testDatabaseUrl } from '../test/db.js';
 
 const user = { email: 'Reporter@Example.com', password: 'correct-horse-9', nickname: '기자' };
@@ -35,6 +35,7 @@ describe.skipIf(!testDatabaseUrl)('인증 API (DB)', () => {
         jwtSecret: TEST_JWT_SECRET,
         cookies: { secure: false },
       },
+      oauth: fakeOAuthDeps(),
       appOrigin: TEST_APP_ORIGIN,
     });
   });
@@ -162,6 +163,26 @@ describe.skipIf(!testDatabaseUrl)('인증 API (DB)', () => {
       expect(logout.status).toBe(204);
       expect(cookieOf(logout, 'access_token')).toMatch(/Expires=Thu, 01 Jan 1970/);
       expect((await request(app).post('/api/auth/refresh').set('Cookie', refresh)).status).toBe(401);
+    });
+  });
+
+  describe('소셜 로그인 사용자', () => {
+    it('같은 카카오 계정은 두 번째 로그인 때 새로 가입되지 않고, 바꾼 닉네임도 덮어쓰지 않는다', async () => {
+      const service = new AuthService({ pool, jwtSecret: TEST_JWT_SECRET });
+      const first = await service.loginWithSocial({ provider: 'kakao', providerId: '42', nickname: '홍길동' });
+      await pool.query("UPDATE users SET nickname = '새이름' WHERE id = $1", [first.user.id]);
+      const second = await service.loginWithSocial({ provider: 'kakao', providerId: '42', nickname: '홍길동' });
+
+      expect(second.user).toEqual({ id: first.user.id, email: null, nickname: '새이름', provider: 'kakao' });
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
+      expect(rows[0]).toEqual({ n: 1 });
+    });
+
+    it('이메일 가입자와 같은 이메일이 없어도(카카오는 이메일 선택 동의) 가입된다', async () => {
+      await request(app).post('/api/auth/signup').send(user);
+      const service = new AuthService({ pool, jwtSecret: TEST_JWT_SECRET });
+      const kakao = await service.loginWithSocial({ provider: 'kakao', providerId: '7', nickname: '카카오' });
+      expect(kakao.user.email).toBeNull();
     });
   });
 

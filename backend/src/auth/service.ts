@@ -13,6 +13,8 @@ import {
   findLocalUserByEmail,
   findUserById,
   saveRefreshToken,
+  upsertSocialUser,
+  type Provider,
   type PublicUser,
 } from './repository.js';
 
@@ -64,6 +66,16 @@ export class AuthService {
     if (!userId) return null;
     const user = await findUserById(this.deps.pool, userId);
     return user ? { user, tokens: await this.issueTokens(user.id) } : null;
+  }
+
+  /** 소셜 로그인: 처음이면 가입, 이미 가입했으면 로그인 */
+  async loginWithSocial(input: {
+    provider: Exclude<Provider, 'local'>;
+    providerId: string;
+    nickname: string;
+  }): Promise<AuthResult> {
+    const user = await upsertSocialUser(this.deps.pool, input);
+    return { user, tokens: await this.issueTokens(user.id) };
   }
 
   async logout(refreshToken: string | undefined): Promise<void> {

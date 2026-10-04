@@ -1,6 +1,7 @@
 import { ACCESS_COOKIE } from '../auth/http.js';
 import { LoginRateLimiter } from '../auth/rateLimit.js';
 import type { AuthRouteDeps } from '../routes/auth.js';
+import type { OAuthRouteDeps } from '../routes/oauth.js';
 import { signAccessToken } from '../auth/tokens.js';
 
 export const TEST_JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
@@ -24,5 +25,19 @@ export function fakeAuthDeps(): AuthRouteDeps {
     loginLimiter: new LoginRateLimiter(),
     jwtSecret: TEST_JWT_SECRET,
     cookies: { secure: false },
+  };
+}
+
+/** 소셜 로그인 의존성 (카카오 비활성) */
+export function fakeOAuthDeps(): OAuthRouteDeps {
+  return {
+    auth: {
+      loginWithSocial: async () => {
+        throw new Error('사용하지 않음');
+      },
+    },
+    cookies: { secure: false },
+    appOrigin: TEST_APP_ORIGIN,
+    kakao: null,
   };
 }

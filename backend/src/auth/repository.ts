@@ -50,6 +50,25 @@ export async function findLocalUserByEmail(
   return row?.password_hash ? { user: toPublicUser(row), passwordHash: row.password_hash } : null;
 }
 
+/**
+ * 소셜 계정으로 가입하거나, 이미 가입했으면 그 사용자를 돌려준다.
+ * 닉네임은 처음 가입할 때만 저장한다 (나중에 서비스 안에서 바꾼 이름을 카카오 이름으로 덮어쓰지 않도록).
+ */
+export async function upsertSocialUser(
+  pool: pg.Pool,
+  input: { provider: Exclude<Provider, 'local'>; providerId: string; nickname: string },
+): Promise<PublicUser> {
+  const { rows } = await pool.query<UserRow>(
+    `INSERT INTO users (provider, provider_id, nickname)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (provider, provider_id) WHERE provider_id IS NOT NULL
+       DO UPDATE SET updated_at = now()
+     RETURNING id, email, nickname, provider, password_hash`,
+    [input.provider, input.providerId, input.nickname],
+  );
+  return toPublicUser(rows[0]!);
+}
+
 export async function findUserById(pool: pg.Pool, id: string): Promise<PublicUser | null> {
   const { rows } = await pool.query<UserRow>(
     'SELECT id, email, nickname, provider, password_hash FROM users WHERE id = $1',
