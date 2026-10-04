@@ -36,8 +36,8 @@ string password_hash "nullable, local 가입자만"
 string provider "local | kakao | naver"
 string provider_id "소셜 계정 고유 ID, local은 null"
 string nickname
-timestamp created_at
-timestamp updated_at
+timestamptz created_at
+timestamptz updated_at
 }
 
 ARTICLES {
@@ -49,17 +49,17 @@ string category "수집 카테고리(경제, IT 등), user_submitted는 nullable
 string original_link "UNIQUE"
 string source_type "api_collected | user_submitted"
 bigint submitted_by FK "nullable, user_submitted일 때 제출자"
-timestamp published_at "user_submitted는 확인 불가 시 null"
+timestamptz published_at "user_submitted는 확인 불가 시 null"
 vector embedding "vector(1536), text-embedding-3-small, 보드에 처음 추가될 때 생성, 그 전엔 null"
-timestamp created_at
+timestamptz created_at
 }
 
 BOARDS {
 bigint id PK
 bigint owner_id FK
 string title
-timestamp created_at
-timestamp updated_at
+timestamptz created_at
+timestamptz updated_at
 }
 
 BOARD_MEMBERS {
@@ -67,16 +67,16 @@ bigint id PK
 bigint board_id FK "UNIQUE(board_id, user_id)"
 bigint user_id FK "UNIQUE(board_id, user_id)"
 string role "owner | editor"
-timestamp joined_at
+timestamptz joined_at
 }
 
 BOARD_INVITES {
 bigint id PK
-bigint board_id FK
+bigint board_id FK "UNIQUE, 보드당 1개"
 string token "UNIQUE"
 bigint created_by FK
-timestamp expires_at "생성 후 7일, 재발급 시 기존 토큰 삭제"
-timestamp created_at
+timestamptz expires_at "생성 후 7일, 재발급 시 기존 토큰 삭제"
+timestamptz created_at
 }
 
 BOARD_ITEMS {
@@ -93,8 +93,8 @@ float prev_position_y "nullable"
 float rotation
 int z_index
 bigint created_by FK
-timestamp created_at
-timestamp updated_at
+timestamptz created_at
+timestamptz updated_at
 }
 
 BOARD_EVENTS {
@@ -103,7 +103,7 @@ bigint board_id FK "INDEX(board_id, created_at)"
 bigint user_id FK
 string action_type "card:add | card:move | card:delete 등"
 jsonb payload
-timestamp created_at
+timestamptz created_at
 }
 
 BOARD_CONNECTIONS {
@@ -112,14 +112,14 @@ bigint board_id FK
 bigint from_item_id FK "UNIQUE(from_item_id, to_item_id)"
 bigint to_item_id FK "UNIQUE(from_item_id, to_item_id)"
 bigint created_by FK
-timestamp created_at
+timestamptz created_at
 }
 
 CLUSTERS {
 bigint id PK
 bigint board_id FK
 text summary "AI가 생성한 이슈 요약"
-timestamp created_at
+timestamptz created_at
 }
 
 CLUSTER_ITEMS {
@@ -133,15 +133,15 @@ bigint id PK
 bigint user_id FK
 jsonb keywords
 time send_time
-timestamp created_at
+timestamptz created_at
 }
 
 REFRESH_TOKENS {
 bigint id PK
 bigint user_id FK
 string token_hash "UNIQUE, 원문 대신 해시 저장"
-timestamp expires_at "발급 후 14일"
-timestamp created_at
+timestamptz expires_at "발급 후 14일"
+timestamptz created_at
 }
 ```
 
@@ -165,7 +165,7 @@ timestamp created_at
 | BOARD_ITEMS | CHECK(article→article_id, memo→content, photo→image_key 필수) | 카드 종류별 필수값 보장 (F-05) |
 | BOARD_ITEMS | INDEX(article_id) WHERE article_id IS NOT NULL | 30일 정리 작업에서 "보드에 올라간 기사" 확인 (F-01) |
 | BOARDS | CHECK(제목 1~50자) | 보드 이름 길이 제한 (F-06) |
-| BOARD_EVENTS | INDEX(board_id, created_at) | 히스토리/되돌리기용 타임라인 조회 성능 |
+| BOARD_EVENTS | INDEX(board_id, created_at) | 변경 이력(히스토리) 타임라인 조회 성능. 되돌리기(undo)는 F-05에서 범위 제외 |
 | BOARD_CONNECTIONS | UNIQUE(from_item_id, to_item_id) | 같은 카드 쌍 중복 연결 방지 (F-10). 저장 시 작은 id를 from으로 정렬해 A→B / B→A 중복도 방지 |
 | CLUSTER_ITEMS | UNIQUE(board_item_id) | 카드 하나는 동시에 하나의 클러스터에만 속함 |
 
