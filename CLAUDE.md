@@ -43,6 +43,7 @@
 - 협업 보드(F-05·F-06·F-07 초대): `backend/src/boards/service.ts`(권한 확인·카드·초대·변경 기록, 멤버가 아니면 not_found로 존재 숨김), REST `routes/boards.ts`(`/api/boards`, `/api/invites`), 실시간 `realtime/boardSync.ts`(room `board:{id}`, 이벤트는 requirements.md F-05 처리 로직 8). `board:join`은 멤버 확인 → room 참여 → 스냅샷 순서(바꾸면 그 사이 변경을 놓침), 클라이언트는 join ack 전 이벤트를 모았다가 스냅샷과 맞춘다. REST로 바뀐 내용은 `BoardNotifier`로 소켓에 알림. 보드를 바꾸는 트랜잭션은 맨 먼저 `bump()`로 `boards.seq`를 올려 행 잠금을 잡는다(같은 보드의 변경을 한 줄로 → seq 순서 = 커밋 순서, z_index 겹침 방지). 카드의 `version`은 그때의 seq이고, 순서 비교는 updatedAt이 아니라 version으로 한다(클라이언트 규칙은 `frontend/src/board/boardState.ts`). 카드 변경은 항상 board_events에도 기록
 - 화면(프론트): 라우트 `/`(보드 목록 F-06) · `/boards/:id`(협업 보드 F-05) · `/invite/:token`(초대 C-12) · `/feed`(뉴스 피드) · `/login`·`/signup`. 디자인은 Claude Design 목업(`모여봄 UI 목업.html`, 캔버스 variant A) 기준 — 글꼴 IBM Plex Sans KR(본문)·Nanum Myeongjo(제목)·Gaegu(메모), 색은 `index.css` 팔레트. 보드 캔버스는 react-konva(`board/BoardCanvas.tsx`, 카드 모양 값은 `board/cardLayout.ts`), 동기화는 `board/useBoardSync.ts`(낙관적 반영 + ack로 확정/되돌림 + version 규칙). 목업 중 F-ID 없는 요소(실시간 커서·편집 중 표시·온보딩 관심사)와 아직 안 만든 기능(AI 클러스터 F-08·연결선 F-10·사진 카드·링크 요약 F-03)은 넣지 않음
 - 링크 AI 요약(F-03): `backend/src/links/`(safeFetch — SSRF 방지 가져오기, extract — 본문 추출·URL 정규화, service — 전체 흐름) + `backend/src/ai/`(summarizer — OpenAI 호출·프롬프트 인젝션 대비, quota — 하루 한도). 외부 페이지는 반드시 `safeFetchHtml`로만 가져올 것(일반 fetch 금지). 비용 드는 새 AI 기능은 `AiQuota`로 한도를 건다. 링크 기사(user_submitted)는 그 보드에 있을 때만 id로 다시 올릴 수 있다(C-06)
+- AI 이슈 묶기(F-08): `backend/src/clusters/`(algorithm — 평균 연결 군집화, service — 임베딩 생성·재사용·요약·한도·보드별 동시 실행 막기) + `ai/embedder.ts`. 클러스터 DB 작업(교체·제안 무시·자동 정렬·원래대로)은 BoardService에 있고 모두 bump()로 순번을 올린다. 화면은 `BoardCanvas`의 ClusterCard·ClusterLinks, 동기화는 `board:clusters`(순번 비교)
 - DB 테스트 공통 도우미 `src/test/fixtures.ts`(resetDb·createUser·createArticle). 새 테이블이 articles/users를 참조하면 TRUNCATE에 CASCADE 필요
 - 백엔드 테스트는 파일을 순차 실행(`vitest.config.ts` fileParallelism: false — DB 테스트끼리 같은 테이블을 TRUNCATE하기 때문)
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
@@ -78,6 +79,7 @@
 - 2026-09-29: 문서 정합성 보완 — ERD ver.1.2(소셜 로그인 컬럼, category, 임베딩 1536차원, submitted_by, image_key, prev_position, refresh_tokens), 요구사항 명세서에 구현 정책 추가(수집 주기 네이버 10분/Guardian 30분, 네이버 응답의 언론사·카테고리 처리, SSRF, 드래그 스로틀링, 토큰/초대/권한, 클러스터링 알고리즘, 기사 보관)
 - 2026-09-29: 아래는 사용자 확정 전 **기본안** — 사용자 제출 기사는 보드 안에서만 노출 / 한·영 기사 한 클러스터 허용 / undo 범위 제외 / 미사용 수집 기사 30일 후 삭제 / 토큰·초대·권한 정책(requirements.md F-07)
 - 2026-09-30: 요약 AI를 OpenAI API로 확정 (기존 사용 중인 API로 키·결제 통일). 외부 AI 호출은 `AiService`로 추상화. F-03 요약 프롬프트의 프롬프트 인젝션 대비는 추후 진행
+- 2026-10-04: F-08 공동 보드 정책 **기본안**(C-05, 사용자 확인 대기) — 분석·정렬·되돌리기·무시는 멤버 누구나, 보드별 동시 분석 1회, "원래대로"는 정렬 뒤 손대지 않은 카드만 되돌림(사람 배치 우선). 분석 한도 계정 10·IP 30·전체 200회, 유사도 기준 0.5(실데이터로 조정)
 - 2026-10-04: F-03 하루 한도 값 계정 20·IP 50·전체 300회(사용자 동의한 기본안, 환경 변수로 조정), 요약 모델 OpenAI `gpt-5.4-mini`(환경 변수로 변경 가능)
 - 2026-10-04: 한 사람이 가입 방식별로 여러 계정을 만들 수 있는 문제 대응 확정 — **A. 로그인 화면에 "최근 로그인 방식" 표시**(브라우저 localStorage, 네이버 로그인 붙일 때 구현) / **B. 비용 드는 AI 기능(F-03 등)은 계정 + IP + 서비스 전체 일일 한도로 제한**(F-03 구현 시 필수). C. 계정 연결 기능은 후보(전 기능 완료 후 검토). 휴대폰 본인인증은 하지 않음
 - 2026-09-30: 개발 순서 확정(위 "개발 우선순위" 표). 중간발표 2026-10-15. 목표는 전 기능(Must·Should·Could) 구현
@@ -101,6 +103,7 @@
 - 2026-10-04: Codex 로컬 코드 검토 L-01~L-05 수정 — L-01 여러 탭 동시 토큰 갱신을 Web Locks로 순서화(두 탭 모의 재현 테스트), L-02·L-05 보드 변경 순번(`boards.seq`·`board_items.version`, 마이그레이션) + 스냅샷을 REPEATABLE READ 한 트랜잭션으로 + 삭제 이벤트에 version + 클라이언트 상태 규칙(`board/boardState.ts`: 큰 version만 적용, 삭제 순번 기억으로 되살아남 방지, join 전 이벤트 재적용), L-05는 기존 코드에서 z_index 겹침 재현 후 수정, L-03 피드 조회 실패 시 자동 재시도(3·10·30초) + "다시 시도" 버튼(jsdom·testing-library 도입, 훅 테스트), L-04 로그아웃 실패 시 로그인 상태 유지·안내 + 갱신과 순서화. 테스트 백엔드 163·프론트 40
 - 2026-10-04: 보드 화면(F-05)·보드 목록(F-06)·초대 페이지와 로그인 후 복귀(C-12) 구현 — Claude Design 목업 캔버스 A 기준(react-konva, 왼쪽 실시간 피드에서 끌어다 놓기·"+ 보드에", 메모 추가·더블클릭 편집, 카드 드래그 이동(드래그 중 위치 중계), 선택 삭제(Delete), 캔버스 이동·휠 확대·맞춤/80%/100%, owner 초대 링크 복사·재발급, 저장 상태 표시). 카카오 로그인 `next` 복귀(내부 경로만, 쿠키). 테스트 백엔드 171·프론트 50(동기화 훅 10개). **브라우저에서 직접 확인은 아직 안 함** — 다음: 사용자와 화면 확인 후 수정, 사진 카드(S3)·네이버 로그인
 - 2026-10-04: 사용자 화면 확인("좋은데?") 후 F-03 링크 AI 요약 구현 — SSRF 방지 가져오기(검사한 IP로 연결 고정·리다이렉트 재검사·포트/크기/시간/형식 제한·EUC-KR), 본문 추출(@extractus/article-extractor, 받아 온 HTML만 해석), OpenAI 요약(JSON 스키마·본문은 데이터로만), 계정·IP·전체 하루 한도(ai_usage, 실패 시 환불), 같은 주소 재사용, C-06(다른 보드 링크 기사 id 접근 차단, 링크 기사 30일 정리), 보드 화면 링크 입력·남은 횟수. 테스트 백엔드 240·프론트 51. 실서버에서 실제 페이지 가져오기·추출까지 확인, **OpenAI 크레딧 부족(insufficient_quota)으로 실제 요약 호출은 미확인** — 사용자가 충전 후 확인 필요
+- 2026-10-04: 보드 이름 변경·삭제·참여자 목록(내보내기·나가기) 화면. F-08 AI 이슈 묶기 구현 — 임베딩(처음 분석할 때 생성·저장·재사용, 실패 기사 제외), 평균 연결 군집화, 클러스터 요약(실패 시 대표 제목), 자동 정렬/원래대로/제안 무시, 하루 한도·실패 시 환불, 보드별 동시 분석 막기, 보드 화면 "AI 이슈 묶기"·클러스터 카드·연결선. 테스트 백엔드 256·프론트 52. **실제 OpenAI 호출·임계값 조정은 크레딧 충전 후**
 
 ## 코딩 컨벤션
 

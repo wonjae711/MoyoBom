@@ -1,6 +1,6 @@
 # 모여봄 — ERD / 테이블 설계
 
-> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.7)
+> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.8)
 >
 > ver.1.1 변경: 소셜 로그인(카카오·네이버) 컬럼 추가, ARTICLES.category 추가, 임베딩 차원 확정(1536), BOARD_CONNECTIONS 중복 방지 제약 추가
 >
@@ -11,6 +11,8 @@
 > ver.1.4 변경 (2026-10-04, F-05): BOARDS·BOARD_MEMBERS·BOARD_INVITES·BOARD_ITEMS·BOARD_EVENTS 구현. BOARD_INVITES는 보드당 1개(UNIQUE(board_id), 재발급 시 교체), BOARD_ITEMS는 카드 종류별 필수값 CHECK·메모 2000자 제한·INDEX(article_id), 보드 삭제 시 하위 데이터 모두 삭제(CASCADE), 사용자 삭제 시 카드 작성자·변경 기록의 user는 null. BOARD_CONNECTIONS(F-10)·CLUSTERS(F-08)·DIGEST_SUBSCRIPTIONS(F-09)는 해당 기능 구현 때 추가
 
 > ver.1.5 변경 (2026-10-04, C-10): ARTICLES에 INDEX(created_at, id) WHERE source_type = 'api_collected' 추가 — 재연결 시 수집 순서 누락분 조회용
+
+> ver.1.8 변경 (2026-10-04, F-08): CLUSTERS 구현 — title(이슈 이름)·x·y(클러스터 카드 위치)·created_by 추가, INDEX(board_id). CLUSTER_ITEMS는 (cluster_id, board_item_id) 복합 PK + board_item_id UNIQUE, 카드·클러스터 삭제 시 함께 삭제. BOARD_ITEMS.arranged_version(자동 정렬 시점의 카드 버전 — "원래대로"에서 그 뒤 직접 옮긴 카드를 구분) 추가
 
 > ver.1.7 변경 (2026-10-04, F-03): AI_USAGE 테이블 추가(비용 드는 AI 호출의 하루 사용량 — 계정·IP·전체), 링크 기사(user_submitted)도 어떤 보드에도 없으면 30일 뒤 정리(C-06)
 
@@ -99,6 +101,7 @@ float prev_position_x "nullable, AI 자동 정렬 전 좌표(원래대로 복원
 float prev_position_y "nullable"
 float rotation
 int z_index
+bigint arranged_version "nullable, 자동 정렬 시점의 version (ver.1.8)"
 bigint version "마지막으로 바뀐 때의 BOARDS.seq (ver.1.6)"
 bigint created_by FK
 timestamptz created_at
@@ -125,15 +128,18 @@ timestamptz created_at
 
 CLUSTERS {
 bigint id PK
-bigint board_id FK
+bigint board_id FK "INDEX"
+string title "AI가 붙인 이슈 이름 (ver.1.8)"
 text summary "AI가 생성한 이슈 요약"
+float x "클러스터 카드 위치 (ver.1.8)"
+float y
+bigint created_by FK "분석한 사람, 탈퇴 시 null"
 timestamptz created_at
 }
 
 CLUSTER_ITEMS {
-bigint id PK
-bigint cluster_id FK
-bigint board_item_id FK "UNIQUE"
+bigint cluster_id PK "FK, 클러스터 삭제 시 함께 삭제"
+bigint board_item_id PK "FK UNIQUE, 카드 삭제 시 함께 삭제"
 }
 
 DIGEST_SUBSCRIPTIONS {
