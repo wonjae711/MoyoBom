@@ -43,6 +43,7 @@ export interface BoardNotifier {
 /**
  * F-05 실시간 협업 보드.
  * - board:join → 멤버인지 확인하고 room에 넣은 뒤, ack로 현재 보드 전체 상태(스냅샷)를 준다 (재연결 시에도 같은 방법으로 복원)
+ *   스냅샷 조회가 실패하면 room에서 다시 뺀다
  * - card:add/move/update/delete → DB 저장 후 ack로 결과를 주고, 같은 room의 다른 사람에게 브로드캐스트
  *   실패하면 ack {ok:false}로 알려 클라이언트가 Optimistic Update를 되돌린다
  * - card:moving → 드래그 중 위치. DB에 저장하지 않고 중계만 한다 (클라이언트가 50~100ms 간격으로 보냄)
@@ -80,10 +81,18 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
       });
     }
 
+    // 순서가 중요하다 (C-11): 멤버 확인 → room 참여 → 스냅샷.
+    // 스냅샷을 먼저 뜨면 스냅샷과 room 참여 사이에 생긴 변경을 놓친다. room에 먼저 들어가면 그 사이 변경은
+    // 이벤트로 오고(스냅샷에도 들어 있을 수 있음), 클라이언트는 join ack 전 이벤트를 모았다가 updatedAt으로 맞춘다.
     on('board:join', async ({ boardId }) => {
-      const snapshot = await boards.getSnapshot(boardId, userId);
+      if (!(await boards.getRole(boardId, userId))) throw new BoardError('not_found', '보드를 찾을 수 없습니다');
       await socket.join(boardRoom(boardId));
-      return { ok: true, snapshot };
+      try {
+        return { ok: true, snapshot: await boards.getSnapshot(boardId, userId) };
+      } catch (error) {
+        await socket.leave(boardRoom(boardId));
+        throw error;
+      }
     });
 
     on('board:leave', async ({ boardId }) => {

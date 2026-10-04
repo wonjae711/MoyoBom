@@ -14,9 +14,20 @@ import { attachBoardSync, type AckResult, type BoardNotifier } from './boardSync
 
 type Ok<T> = { ok: true } & T;
 
+/** 스냅샷 조회 직후에 끼어들 수 있게 한 BoardService (join 순서 경쟁 상태 재현용) */
+class HookedBoards extends BoardService {
+  afterSnapshot: ((userId: string) => Promise<void>) | null = null;
+
+  override async getSnapshot(boardId: string, userId: string): Promise<BoardSnapshot> {
+    const snapshot = await super.getSnapshot(boardId, userId);
+    await this.afterSnapshot?.(userId);
+    return snapshot;
+  }
+}
+
 describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', () => {
   let pool: pg.Pool;
-  let boards: BoardService;
+  let boards: HookedBoards;
   let http: HttpServer;
   let io: Server;
   let notifier: BoardNotifier;
@@ -62,11 +73,12 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
 
   beforeAll(() => {
     pool = createTestPool();
-    boards = new BoardService(pool);
+    boards = new HookedBoards(pool);
   });
 
   beforeEach(async () => {
     await resetDb(pool);
+    boards.afterSnapshot = null;
     ownerId = await createUser(pool, '주인');
     friendId = await createUser(pool, '친구');
     boardId = (await boards.createBoard(ownerId, '반도체 이슈')).id;
@@ -102,6 +114,52 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
     const res = await emit<{ snapshot: BoardSnapshot }>(socket, 'board:join', { boardId });
     expect(res.ok).toBe(true);
     expect((res as Ok<{ snapshot: BoardSnapshot }>).snapshot).toMatchObject({ role: 'owner', items: [] });
+  });
+
+  it('[C-11] 스냅샷을 뜬 직후 다른 사람이 카드를 추가해도, 들어오는 사람은 스냅샷이나 이벤트로 반드시 받는다', async () => {
+    const owner = await client(ownerId);
+    await emit(owner, 'board:join', { boardId });
+    const friend = await client(friendId);
+    const received: BoardItem[] = [];
+    friend.on('card:added', ({ item }: { item: BoardItem }) => received.push(item));
+
+    // 친구의 스냅샷 조회가 끝난 순간 멈추게 하고, 그 사이에 주인이 카드를 추가한다
+    let reached!: () => void;
+    const atGate = new Promise<void>((resolve) => (reached = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    boards.afterSnapshot = async (userId) => {
+      if (userId !== friendId) return;
+      reached();
+      await gate;
+    };
+
+    const joining = emit<{ snapshot: BoardSnapshot }>(friend, 'board:join', { boardId });
+    await atGate;
+    const ack = await emit<{ item: BoardItem }>(owner, 'card:add', { boardId, type: 'memo', content: '사이에 추가', x: 0, y: 0 });
+    const addedId = (ack as Ok<{ item: BoardItem }>).item.id;
+    release();
+    const { snapshot } = (await joining) as Ok<{ snapshot: BoardSnapshot }>;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const seen = [...snapshot.items, ...received].map((item) => item.id);
+    expect(seen).toContain(addedId);
+  });
+
+  it('[C-11] 스냅샷 조회가 실패하면 room에서 다시 빠져 그 보드 소식을 받지 않는다', async () => {
+    const owner = await client(ownerId);
+    await emit(owner, 'board:join', { boardId });
+    const friend = await client(friendId);
+    boards.afterSnapshot = async (userId) => {
+      if (userId === friendId) throw new Error('DB 장애 흉내');
+    };
+
+    expect(await emit(friend, 'board:join', { boardId })).toMatchObject({ ok: false, error: 'server_error' });
+    const inRoom = await io.in(`board:${boardId}`).fetchSockets();
+    expect(inRoom.map((s) => String(s.data.userId))).toEqual([ownerId]);
+    const silent = nothing(friend, 'card:added');
+    await emit(owner, 'card:add', { boardId, type: 'memo', content: 'x', x: 0, y: 0 });
+    expect(await silent).toBe(true);
   });
 
   it('[보안] 멤버가 아니면 보드 room에 들어갈 수 없고, 그 보드 소식도 받지 못한다', async () => {
