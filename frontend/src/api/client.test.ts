@@ -66,6 +66,43 @@ describe('apiFetch', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
+  it('[C-09] access가 만료된 채 페이지를 다시 열어도 /api/auth/me는 갱신 후 다시 요청해 로그인을 유지한다', async () => {
+    let meCalls = 0
+    const fn = mockFetch((url) => {
+      if (url === '/api/auth/refresh') return json({ user: {} })
+      meCalls++
+      return meCalls === 1 ? json({ error: '로그인이 필요합니다' }, 401) : json({ user: { nickname: '주인' } })
+    })
+    const listener = vi.fn()
+    const off = onUnauthorized(listener)
+
+    expect(await apiFetch('/api/auth/me')).toEqual({ user: { nickname: '주인' } })
+    expect(fn.mock.calls.map(([u]) => String(u))).toEqual(['/api/auth/me', '/api/auth/refresh', '/api/auth/me'])
+    expect(listener).not.toHaveBeenCalled()
+    off()
+  })
+
+  it('[C-09] /api/auth/me와 다른 요청이 동시에 401을 받아도 갱신은 한 번만 보낸다', async () => {
+    let refreshed = false
+    const fn = mockFetch((url) => {
+      if (url === '/api/auth/refresh') {
+        refreshed = true
+        return json({})
+      }
+      return refreshed ? json({}) : json({}, 401)
+    })
+
+    await Promise.all([apiFetch('/api/auth/me'), apiFetch('/api/articles'), apiFetch('/api/boards')])
+    expect(fn.mock.calls.filter(([u]) => String(u) === '/api/auth/refresh')).toHaveLength(1)
+  })
+
+  it('refresh·logout 요청 자신은 401이어도 다시 갱신을 시도하지 않는다', async () => {
+    const fn = mockFetch(() => json({}, 401))
+    await expect(apiFetch('/api/auth/logout', { method: 'POST' })).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(apiFetch('/api/auth/refresh', { method: 'POST' })).rejects.toBeInstanceOf(UnauthorizedError)
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
   it('400 응답의 잘못된 필드 목록을 전달한다', async () => {
     mockFetch(() => json({ error: '입력값을 확인해 주세요', fields: ['email'] }, 400))
     const error = (await apiFetch('/api/auth/signup', { method: 'POST', body: '{}' }).catch((e: unknown) => e)) as ApiError

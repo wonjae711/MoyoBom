@@ -49,9 +49,17 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body.error ?? `요청 실패 (HTTP ${res.status})`, body.fields)
 }
 
+/** 401이어도 토큰 갱신을 시도하지 않는 경로 (갱신 자체·로그인 시도·로그아웃 — 재귀 갱신 방지) */
+const NO_REFRESH_PATHS = ['/api/auth/refresh', '/api/auth/login', '/api/auth/signup', '/api/auth/logout']
+/** 401이 "로그인 정보가 틀림"을 뜻하는 경로 — 로그아웃 상태로 알리지 않고 서버 메시지를 그대로 전달 */
+const CREDENTIAL_PATHS = ['/api/auth/login', '/api/auth/signup']
+
+const matches = (path: string, list: string[]) => list.some((p) => path === p || path.startsWith(`${p}?`))
+
 /**
  * 백엔드 API 호출. 토큰은 httpOnly 쿠키라 브라우저가 알아서 보낸다.
  * access token이 만료돼 401이 오면 한 번 갱신하고 다시 시도하며, 그래도 안 되면 로그아웃 상태로 알린다.
+ * `/api/auth/me`도 갱신 대상이다 — access가 만료된 채 페이지를 다시 열어도 refresh가 유효하면 로그인이 유지된다.
  */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const request = () =>
@@ -61,10 +69,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     })
 
   let res = await request()
-  if (res.status === 401 && !path.startsWith('/api/auth/')) {
+  if (res.status === 401 && !matches(path, NO_REFRESH_PATHS)) {
     if (await refreshSession()) res = await request()
   }
-  if (res.status === 401 && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/signup')) {
+  if (res.status === 401 && !matches(path, CREDENTIAL_PATHS)) {
     unauthorizedListeners.forEach((listener) => listener())
     throw new UnauthorizedError()
   }
