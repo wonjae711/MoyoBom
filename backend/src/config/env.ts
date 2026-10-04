@@ -38,8 +38,8 @@ const envSchema = z.object({
   AI_SUMMARY_LIMIT_USER: z.coerce.number().int().min(0).default(20),
   AI_SUMMARY_LIMIT_IP: z.coerce.number().int().min(0).default(50),
   AI_SUMMARY_LIMIT_TOTAL: z.coerce.number().int().min(0).default(300),
-  /** AI 클러스터링(F-08): 같은 이슈로 묶는 코사인 유사도 기준과 하루 분석 한도 */
-  CLUSTER_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
+  /** AI 클러스터링(F-08): 같은 이슈로 묶는 코사인 유사도 기준(2026-10-04 실데이터로 0.32 — 같은 주제 0.34~0.64, 다른 주제 최대 0.33)과 하루 분석 한도 */
+  CLUSTER_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.32),
   AI_CLUSTER_LIMIT_USER: z.coerce.number().int().min(0).default(10),
   AI_CLUSTER_LIMIT_IP: z.coerce.number().int().min(0).default(30),
   AI_CLUSTER_LIMIT_TOTAL: z.coerce.number().int().min(0).default(200),
