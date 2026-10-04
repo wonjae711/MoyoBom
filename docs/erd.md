@@ -1,10 +1,12 @@
 # 모여봄 — ERD / 테이블 설계
 
-> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-09-29, ver.1.2)
+> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.3)
 >
 > ver.1.1 변경: 소셜 로그인(카카오·네이버) 컬럼 추가, ARTICLES.category 추가, 임베딩 차원 확정(1536), BOARD_CONNECTIONS 중복 방지 제약 추가
 >
 > ver.1.2 변경 (2026-09-29): ARTICLES.submitted_by 추가·published_at nullable, BOARD_ITEMS.image_url → image_key(S3 비공개) 및 prev_position_x/y(자동 정렬 전 좌표) 추가, REFRESH_TOKENS 테이블 추가, ivfflat 인덱스는 F-04 시맨틱 검색·F-12 착수 시 HNSW로 추가하도록 보류, 시간 컬럼은 timestamptz로 통일
+>
+> ver.1.3 변경 (2026-10-04): 실제 마이그레이션과 맞춤 — USERS 이메일 중복 검사는 대소문자 무시(lower(email)), 가입 방식별 필수값 CHECK 추가, ARTICLES.submitted_by FK(사용자 삭제 시 null), REFRESH_TOKENS.user_id FK(사용자 삭제 시 함께 삭제)·INDEX(user_id). 구현 완료 테이블: ARTICLES, USERS, REFRESH_TOKENS
 
 ### 1. 시각화 다이어그램 (Mermaid)
 
@@ -145,13 +147,15 @@ timestamp created_at
 
 | 테이블 | 제약 조건 내용 | 목적 |
 |---|---|---|
-| USERS | UNIQUE(email) WHERE provider = 'local' | 이메일 중복 가입 방지 (F-07). 카카오는 이메일 제공이 선택 동의라 소셜 계정은 email이 null일 수 있음 |
+| USERS | UNIQUE(lower(email)) WHERE provider = 'local' | 이메일 중복 가입 방지, 대소문자 무시 (F-07). 카카오는 이메일 제공이 선택 동의라 소셜 계정은 email이 null일 수 있음 |
 | USERS | UNIQUE(provider, provider_id) | 동일 소셜 계정 중복 가입 방지 (F-07) |
+| USERS | CHECK(local이면 email·password_hash 필수 / 소셜이면 provider_id 필수·password_hash 없음) | 가입 방식별 필수값 보장 (F-07) |
 | ARTICLES | UNIQUE(original_link) | 동일 기사 중복 수집 방지 (F-01) |
 | ARTICLES | INDEX(category, published_at) | 카테고리별 피드·필터 조회 성능 (F-02, F-04) |
 | ARTICLES | INDEX(published_at) | 전체 최신순 피드 조회 성능 (F-02) |
 | ARTICLES | CHECK(api_collected면 category·published_at 필수) | API 수집 기사의 필수값 보장. null 허용은 user_submitted만 |
 | REFRESH_TOKENS | UNIQUE(token_hash) | refresh token 조회·폐기 (F-07) |
+| REFRESH_TOKENS | INDEX(user_id), FK ON DELETE CASCADE | 사용자별 토큰 조회, 탈퇴 시 토큰 함께 삭제 |
 | BOARD_MEMBERS | UNIQUE(board_id, user_id) | 동일 사용자 중복 참여 방지 |
 | BOARD_INVITES | UNIQUE(token) | 초대 링크 위조/충돌 방지 (F-07) |
 | BOARD_ITEMS | INDEX(board_id) | 보드 접속 시 카드 목록 빠른 조회 (F-05) |
