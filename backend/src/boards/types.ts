@@ -42,11 +42,14 @@ export interface BoardItem {
   zIndex: number;
   createdBy: string | null;
   updatedAt: string;
+  /** 마지막으로 바뀐 때의 보드 변경 순번 (L-02). 클라이언트는 더 큰 version만 적용한다 */
+  version: number;
 }
 
 /** 보드에 들어오거나 다시 연결했을 때 받는 전체 상태 */
 export interface BoardSnapshot {
-  board: { id: string; title: string; ownerId: string; updatedAt: string };
+  /** seq: 이 스냅샷에 반영된 마지막 변경 순번. 이보다 큰 version의 이벤트만 스냅샷 위에 적용한다 */
+  board: { id: string; title: string; ownerId: string; updatedAt: string; seq: number };
   role: BoardRole;
   members: BoardMember[];
   items: BoardItem[];

@@ -221,4 +221,63 @@ describe.skipIf(!testDatabaseUrl)('BoardService (DB)', () => {
       await expectBoardError(boards.addItem(boardId, owner, { type: 'article', articleId: '999999', x: 0, y: 0 }), 'invalid');
     });
   });
+
+  describe('변경 순번 (L-02·L-05)', () => {
+    async function memo(boardId: string, content: string) {
+      return boards.addItem(boardId, owner, { type: 'memo', content, x: 0, y: 0 });
+    }
+
+    it('카드가 바뀔 때마다 보드 순번이 하나씩 올라가고, 스냅샷은 같은 시점의 순번을 준다', async () => {
+      const boardId = await boardWithEditor();
+      const start = (await boards.getSnapshot(boardId, owner)).board.seq;
+      const a = await memo(boardId, 'a');
+      const moved = await boards.moveItem(boardId, editor, a.id, { x: 5, y: 5 });
+      const edited = await boards.updateMemo(boardId, owner, a.id, 'a2');
+      const removed = await boards.deleteItem(boardId, owner, a.id);
+
+      expect([a.version, moved.version, edited.version, removed.version]).toEqual([start + 1, start + 2, start + 3, start + 4]);
+      expect((await boards.getSnapshot(boardId, owner)).board.seq).toBe(start + 4);
+    });
+
+    it('[L-05] 여러 카드를 동시에 옮겨도 z_index가 겹치지 않고, 적층 순서가 변경 순번과 같다', async () => {
+      const boardId = await boardWithEditor();
+      const cards = [];
+      for (let i = 0; i < 8; i++) cards.push(await memo(boardId, `m${i}`));
+
+      // 서로 다른 카드 이동 + 새 카드 추가를 동시에
+      const results = await Promise.all([
+        ...cards.map((card, i) => boards.moveItem(boardId, i % 2 ? owner : editor, card.id, { x: i, y: i })),
+        memo(boardId, 'new-1'),
+        memo(boardId, 'new-2'),
+      ]);
+
+      const { items } = await boards.getSnapshot(boardId, owner);
+      expect(new Set(items.map((i) => i.zIndex)).size).toBe(items.length);
+      expect(new Set(results.map((r) => r.version)).size).toBe(results.length);
+      // 스냅샷은 z_index 순 — 나중에 커밋된(순번이 큰) 변경일수록 위에 있다
+      const versions = items.map((i) => i.version);
+      expect(versions).toEqual([...versions].sort((x, y) => x - y));
+    });
+
+    it('[L-02] 같은 카드를 동시에 여러 번 옮기면 DB에 남는 값은 순번이 가장 큰 변경이다', async () => {
+      const boardId = await boardWithEditor();
+      const card = await memo(boardId, 'x');
+      const results = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => boards.moveItem(boardId, i % 2 ? owner : editor, card.id, { x: i * 10, y: 0 })),
+      );
+
+      const last = results.reduce((a, b) => (a.version > b.version ? a : b));
+      const [stored] = (await boards.getSnapshot(boardId, owner)).items;
+      expect(stored).toMatchObject({ x: last.x, version: last.version });
+    });
+
+    it('[L-02] 삭제 순번은 그 카드의 어떤 변경보다 크다 (삭제 후 늦게 도착한 이동으로 되살리지 않는 기준)', async () => {
+      const boardId = await boardWithEditor();
+      const card = await memo(boardId, 'x');
+      const moves = await Promise.all([1, 2, 3].map((x) => boards.moveItem(boardId, editor, card.id, { x, y: 0 })));
+      const { version } = await boards.deleteItem(boardId, owner, card.id);
+      expect(version).toBeGreaterThan(Math.max(...moves.map((m) => m.version)));
+      await expectBoardError(boards.moveItem(boardId, editor, card.id, { x: 9, y: 9 }), 'not_found');
+    });
+  });
 });

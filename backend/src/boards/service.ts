@@ -26,6 +26,7 @@ interface ItemRow {
   z_index: number;
   created_by: string | null;
   updated_at: Date;
+  version: string;
   a_title: string | null;
   a_description: string | null;
   a_source: string | null;
@@ -36,7 +37,7 @@ interface ItemRow {
 
 const ITEM_COLUMNS = `
   bi.id, bi.item_type, bi.article_id, bi.content, bi.image_key, bi.position_x, bi.position_y,
-  bi.rotation, bi.z_index, bi.created_by, bi.updated_at,
+  bi.rotation, bi.z_index, bi.created_by, bi.updated_at, bi.version::text AS version,
   a.title AS a_title, a.description AS a_description, a.source AS a_source, a.category AS a_category,
   a.original_link AS a_original_link, a.published_at AS a_published_at`;
 
@@ -64,6 +65,7 @@ function toItem(row: ItemRow): BoardItem {
     zIndex: row.z_index,
     createdBy: row.created_by,
     updatedAt: row.updated_at.toISOString(),
+    version: Number(row.version),
   };
 }
 
@@ -76,7 +78,11 @@ export type NewItemInput =
 /**
  * 보드·멤버·초대·카드 (F-05, F-06, F-07 초대).
  * 모든 작업은 먼저 멤버인지 확인한다. 멤버가 아니면 보드가 있어도 not_found로 답해 존재 여부를 숨긴다.
- * 카드 변경은 board_items(현재 상태)와 board_events(변경 기록)에 함께 저장하고 boards.updated_at을 갱신한다.
+ * 카드 변경은 board_items(현재 상태)와 board_events(변경 기록)에 함께 저장한다.
+ *
+ * 변경 순서 (L-02·L-05): 보드를 바꾸는 트랜잭션은 맨 먼저 bump()로 boards.seq를 올린다. 이 행 잠금을 커밋까지 쥐므로
+ * 같은 보드의 변경은 한 줄로 서고, seq 순서가 곧 커밋 순서다. 카드의 version = 마지막으로 바뀐 때의 seq이며,
+ * 클라이언트는 이 값으로 늦게 도착한 이벤트·스냅샷과 겹친 이벤트를 걸러낸다. z_index(최대+1)도 잠금 뒤에 계산해 겹치지 않는다.
  */
 export class BoardService {
   constructor(private readonly pool: pg.Pool) {}
@@ -111,6 +117,16 @@ export class BoardService {
     return role;
   }
 
+  /** 보드 변경 순번을 올리고(행 잠금 — 커밋까지 같은 보드의 다른 변경을 기다리게 함) 새 순번을 돌려준다 */
+  private async bump(client: pg.PoolClient, boardId: string): Promise<number> {
+    const { rows } = await client.query<{ seq: string }>(
+      'UPDATE boards SET seq = seq + 1, updated_at = now() WHERE id = $1 RETURNING seq::text AS seq',
+      [boardId],
+    );
+    if (!rows[0]) throw new BoardError('not_found', '보드를 찾을 수 없습니다');
+    return Number(rows[0].seq);
+  }
+
   private async log(db: Db, boardId: string, userId: string, actionType: string, payload: object) {
     await db.query('INSERT INTO board_events (board_id, user_id, action_type, payload) VALUES ($1, $2, $3, $4)', [
       boardId,
@@ -118,7 +134,6 @@ export class BoardService {
       actionType,
       JSON.stringify(payload),
     ]);
-    await db.query('UPDATE boards SET updated_at = now() WHERE id = $1', [boardId]);
   }
 
   // ---------- 보드 (F-06) ----------
@@ -166,31 +181,43 @@ export class BoardService {
     });
   }
 
+  /**
+   * 보드 전체 상태. 한 트랜잭션(REPEATABLE READ)에서 읽어 seq와 카드 목록이 같은 시점을 가리키게 한다 —
+   * seq 이하의 변경은 모두 들어 있고, 그보다 큰 변경은 하나도 들어 있지 않다.
+   */
   async getSnapshot(boardId: string, userId: string): Promise<BoardSnapshot> {
-    const role = await this.requireRole(boardId, userId, 'member');
-    const [board, members, items] = await Promise.all([
-      this.pool.query<{ id: string; title: string; owner_id: string; updated_at: Date }>(
-        'SELECT id, title, owner_id, updated_at FROM boards WHERE id = $1',
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const role = await this.requireRole(boardId, userId, 'member', client);
+      const board = await client.query<{ id: string; title: string; owner_id: string; updated_at: Date; seq: string }>(
+        'SELECT id, title, owner_id, updated_at, seq::text AS seq FROM boards WHERE id = $1',
         [boardId],
-      ),
-      this.pool.query<{ user_id: string; nickname: string; role: BoardRole }>(
+      );
+      const members = await client.query<{ user_id: string; nickname: string; role: BoardRole }>(
         `SELECT m.user_id, u.nickname, m.role FROM board_members m JOIN users u ON u.id = m.user_id
          WHERE m.board_id = $1 ORDER BY m.role DESC, m.joined_at`,
         [boardId],
-      ),
-      this.pool.query<ItemRow>(
+      );
+      const items = await client.query<ItemRow>(
         `SELECT ${ITEM_COLUMNS} FROM board_items bi LEFT JOIN articles a ON a.id = bi.article_id
          WHERE bi.board_id = $1 ORDER BY bi.z_index, bi.id`,
         [boardId],
-      ),
-    ]);
-    const b = board.rows[0]!;
-    return {
-      board: { id: b.id, title: b.title, ownerId: b.owner_id, updatedAt: b.updated_at.toISOString() },
-      role,
-      members: members.rows.map((m): BoardMember => ({ userId: m.user_id, nickname: m.nickname, role: m.role })),
-      items: items.rows.map(toItem),
-    };
+      );
+      await client.query('COMMIT');
+      const b = board.rows[0]!;
+      return {
+        board: { id: b.id, title: b.title, ownerId: b.owner_id, updatedAt: b.updated_at.toISOString(), seq: Number(b.seq) },
+        role,
+        members: members.rows.map((m): BoardMember => ({ userId: m.user_id, nickname: m.nickname, role: m.role })),
+        items: items.rows.map(toItem),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async renameBoard(boardId: string, userId: string, title: string): Promise<void> {
@@ -253,6 +280,7 @@ export class BoardService {
   async acceptInvite(token: string, userId: string, now = new Date()): Promise<{ boardId: string; joined: boolean }> {
     return this.tx(async (client) => {
       const invite = await this.findInvite(token, now, client);
+      await this.bump(client, invite.board_id);
       const { rowCount } = await client.query(
         `INSERT INTO board_members (board_id, user_id, role) VALUES ($1, $2, 'editor')
          ON CONFLICT (board_id, user_id) DO NOTHING`,
@@ -273,6 +301,7 @@ export class BoardService {
     if (!targetRole) throw new BoardError('not_found', '보드 멤버가 아닙니다');
     if (targetRole === 'owner') throw new BoardError('invalid', '보드 주인은 나갈 수 없습니다. 보드를 삭제해 주세요');
     await this.tx(async (client) => {
+      await this.bump(client, boardId);
       await client.query('DELETE FROM board_members WHERE board_id = $1 AND user_id = $2', [boardId, targetUserId]);
       await this.log(client, boardId, actorId, actorId === targetUserId ? 'member:leave' : 'member:remove', {
         userId: targetUserId,
@@ -296,14 +325,15 @@ export class BoardService {
   async addItem(boardId: string, userId: string, input: NewItemInput): Promise<BoardItem> {
     return this.tx(async (client) => {
       await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
       if (input.type === 'article') {
         const { rowCount } = await client.query('SELECT 1 FROM articles WHERE id = $1', [input.articleId]);
         if (!rowCount) throw new BoardError('invalid', '없는 기사입니다');
       }
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO board_items (board_id, item_type, article_id, content, position_x, position_y, z_index, created_by)
+        `INSERT INTO board_items (board_id, item_type, article_id, content, position_x, position_y, z_index, created_by, version)
          VALUES ($1, $2, $3, $4, $5, $6,
-           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $7)
+           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $7, $8)
          RETURNING id`,
         [
           boardId,
@@ -313,6 +343,7 @@ export class BoardService {
           input.x,
           input.y,
           userId,
+          seq,
         ],
       );
       const itemId = rows[0]!.id;
@@ -333,11 +364,13 @@ export class BoardService {
   ): Promise<BoardItem> {
     return this.tx(async (client) => {
       await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
       const { rowCount } = await client.query(
         `UPDATE board_items SET position_x = $3, position_y = $4, rotation = coalesce($5, rotation),
-           z_index = (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), updated_at = now()
+           z_index = (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1),
+           updated_at = now(), version = $6
          WHERE board_id = $1 AND id = $2`,
-        [boardId, itemId, to.x, to.y, to.rotation ?? null],
+        [boardId, itemId, to.x, to.y, to.rotation ?? null, seq],
       );
       if (!rowCount) throw new BoardError('not_found', '이미 삭제된 카드입니다');
       await this.log(client, boardId, userId, 'card:move', { itemId, x: to.x, y: to.y, rotation: to.rotation });
@@ -348,10 +381,11 @@ export class BoardService {
   async updateMemo(boardId: string, userId: string, itemId: string, content: string): Promise<BoardItem> {
     return this.tx(async (client) => {
       await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
       const { rowCount } = await client.query(
-        `UPDATE board_items SET content = $3, updated_at = now()
+        `UPDATE board_items SET content = $3, updated_at = now(), version = $4
          WHERE board_id = $1 AND id = $2 AND item_type = 'memo'`,
-        [boardId, itemId, content],
+        [boardId, itemId, content, seq],
       );
       if (!rowCount) throw new BoardError('not_found', '이미 삭제된 메모입니다');
       await this.log(client, boardId, userId, 'card:update', { itemId });
@@ -359,15 +393,18 @@ export class BoardService {
     });
   }
 
-  async deleteItem(boardId: string, userId: string, itemId: string): Promise<void> {
-    await this.tx(async (client) => {
+  /** 삭제도 순번을 받는다. 클라이언트는 이 순번 이하의 늦은 이벤트로 카드를 되살리지 않는다 */
+  async deleteItem(boardId: string, userId: string, itemId: string): Promise<{ version: number }> {
+    return this.tx(async (client) => {
       await this.requireRole(boardId, userId, 'member', client);
+      const seq = await this.bump(client, boardId);
       const { rowCount } = await client.query('DELETE FROM board_items WHERE board_id = $1 AND id = $2', [
         boardId,
         itemId,
       ]);
       if (!rowCount) throw new BoardError('not_found', '이미 삭제된 카드입니다');
       await this.log(client, boardId, userId, 'card:delete', { itemId });
+      return { version: seq };
     });
   }
 }

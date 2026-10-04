@@ -125,9 +125,9 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
     });
 
     on('card:delete', async ({ boardId, itemId }) => {
-      await boards.deleteItem(boardId, userId, itemId);
-      socket.to(boardRoom(boardId)).emit('card:deleted', { boardId, itemId, by: userId });
-      return { ok: true };
+      const { version } = await boards.deleteItem(boardId, userId, itemId);
+      socket.to(boardRoom(boardId)).emit('card:deleted', { boardId, itemId, version, by: userId });
+      return { ok: true, version };
     });
   });
 

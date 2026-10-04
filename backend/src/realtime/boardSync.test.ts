@@ -205,9 +205,11 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
     expect((await updated).item.content).toBe('수정본');
 
     // 삭제
-    const deleted = next<{ itemId: string }>(friend, 'card:deleted');
-    expect(await emit(owner, 'card:delete', { boardId, itemId: memoId })).toEqual({ ok: true });
-    expect((await deleted).itemId).toBe(memoId);
+    const deleted = next<{ itemId: string; version: number }>(friend, 'card:deleted');
+    const deleteAck = await emit<{ version: number }>(owner, 'card:delete', { boardId, itemId: memoId });
+    expect(deleteAck).toMatchObject({ ok: true });
+    // 삭제 이벤트도 순번을 담는다 — 받은 쪽은 이 순번 이하의 늦은 이벤트로 카드를 되살리지 않는다 (L-02)
+    expect(await deleted).toMatchObject({ itemId: memoId, version: (deleteAck as Ok<{ version: number }>).version });
   });
 
   it('드래그 중 위치(card:moving)는 다른 사람에게 중계만 하고 DB에는 저장하지 않는다', async () => {
