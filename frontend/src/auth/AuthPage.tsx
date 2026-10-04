@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { ApiError, apiFetch } from '../api/client'
+import { kakaoLoginUrl } from './loginUrl'
 import { useAuth } from './useAuth'
 import './AuthPage.css'
 
@@ -117,7 +118,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
             className="auth__social auth__social--kakao"
             type="button"
             disabled={!providers.kakao}
-            onClick={() => window.location.assign('/api/auth/kakao')}
+            onClick={() => window.location.assign(kakaoLoginUrl(from))}
           >
             {providers.kakao ? '카카오로 계속하기' : '카카오로 계속하기 (준비 중)'}
           </button>

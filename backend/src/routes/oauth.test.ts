@@ -3,7 +3,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthResult } from '../auth/service.js';
 import { TEST_APP_ORIGIN } from '../test/auth.js';
-import { createOAuthRouter, type OAuthRouteDeps } from './oauth.js';
+import { createOAuthRouter, safeNextPath, type OAuthRouteDeps } from './oauth.js';
 
 const kakao = { restApiKey: 'rest-key', clientSecret: 'secret', redirectUri: `${TEST_APP_ORIGIN}/api/auth/kakao/callback` };
 
@@ -63,6 +63,49 @@ describe('소셜 로그인 라우트', () => {
     expect(res.headers.location).toBe(`${TEST_APP_ORIGIN}/`);
     expect(loginWithSocial).toHaveBeenCalledWith({ provider: 'kakao', providerId: '42', nickname: '홍길동' });
     expect(setCookies(res).some((c) => c.startsWith('access_token=our-access'))).toBe(true);
+  });
+
+  it('[C-12] 로그인 후 돌아갈 화면(next)을 기억했다가 로그인이 끝나면 그 화면으로 보낸다', async () => {
+    const start = await request(makeApp().app).get('/api/auth/kakao?next=%2Finvite%2Fabc_DEF-1');
+    const nextCookie = setCookies(start).find((c) => c.startsWith('oauth_next='))!;
+    expect(nextCookie).toMatch(/HttpOnly/);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request) =>
+        String(url).includes('/oauth/token')
+          ? Response.json({ access_token: 'kakao-access' })
+          : Response.json({ id: 42, kakao_account: { profile: { nickname: '홍길동' } } }),
+      ),
+    );
+    const res = await request(makeApp().app)
+      .get('/api/auth/kakao/callback?code=abc&state=s1')
+      .set('Cookie', `oauth_state=s1; ${nextCookie.split(';')[0]}`);
+    vi.unstubAllGlobals();
+    expect(res.headers.location).toBe(`${TEST_APP_ORIGIN}/invite/abc_DEF-1`);
+  });
+
+  it.each(['//evil.example', '/\\evil.example', 'https://evil.example', 'invite/x', '/a b', '/' + 'a'.repeat(250)])(
+    '[보안] 다른 사이트로 새는 next(%s)는 받지 않는다 (오픈 리다이렉트 방지)',
+    (value) => {
+      expect(safeNextPath(value)).toBeNull();
+    },
+  );
+
+  it('[보안] 쿠키가 조작돼 외부 주소가 들어 있어도 우리 화면(/)으로 보낸다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request) =>
+        String(url).includes('/oauth/token')
+          ? Response.json({ access_token: 'kakao-access' })
+          : Response.json({ id: 42, kakao_account: { profile: { nickname: '홍길동' } } }),
+      ),
+    );
+    const res = await request(makeApp().app)
+      .get('/api/auth/kakao/callback?code=abc&state=s1')
+      .set('Cookie', 'oauth_state=s1; oauth_next=%2F%2Fevil.example');
+    vi.unstubAllGlobals();
+    expect(res.headers.location).toBe(`${TEST_APP_ORIGIN}/`);
   });
 
   it('[보안] state가 없거나 다르면 로그인하지 않는다 (CSRF 방지)', async () => {

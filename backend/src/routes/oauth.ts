@@ -5,7 +5,19 @@ import { buildKakaoAuthorizeUrl, fetchKakaoProfile, type KakaoConfig } from '../
 import type { AuthService } from '../auth/service.js';
 
 const STATE_COOKIE = 'oauth_state';
+const NEXT_COOKIE = 'oauth_next';
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * 로그인 후 돌아갈 화면 경로 (C-12, 예: 초대 페이지 /invite/abc).
+ * 우리 화면 안의 경로만 허용한다 — "//evil.com"이나 "/\\evil.com"처럼 다른 사이트로 새는 주소(오픈 리다이렉트)는 버린다.
+ */
+export function safeNextPath(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 200) return null;
+  if (!/^\/[A-Za-z0-9\-._~/?=&%]*$/.test(value)) return null;
+  if (value.startsWith('//')) return null;
+  return value;
+}
 
 export interface OAuthRouteDeps {
   auth: Pick<AuthService, 'loginWithSocial'>;
@@ -23,7 +35,7 @@ function sameState(a: string | undefined, b: unknown): boolean {
 /**
  * 소셜 로그인 (F-07). 브라우저가 직접 이동하는 주소들이라 JSON이 아니라 리다이렉트로 응답한다.
  * - GET /api/auth/providers         사용 가능한 소셜 로그인 목록
- * - GET /api/auth/kakao             카카오 인가 페이지로 이동
+ * - GET /api/auth/kakao?next=/경로   카카오 인가 페이지로 이동 (next: 로그인 후 돌아갈 화면, 내부 경로만)
  * - GET /api/auth/kakao/callback    카카오가 돌려보내는 주소 → 로그인 처리 후 화면으로 이동
  */
 export function createOAuthRouter(deps: OAuthRouteDeps): Router {
@@ -41,7 +53,7 @@ export function createOAuthRouter(deps: OAuthRouteDeps): Router {
     res.json({ kakao: deps.kakao !== null, naver: false });
   });
 
-  router.get('/kakao', (_req, res) => {
+  router.get('/kakao', (req, res) => {
     if (!deps.kakao) {
       res.redirect(failTo('kakao_unavailable'));
       return;
@@ -49,12 +61,18 @@ export function createOAuthRouter(deps: OAuthRouteDeps): Router {
     // CSRF 방지: 요청마다 임의의 state를 쿠키에 저장하고, 콜백의 state와 같은지 확인한다
     const state = randomBytes(16).toString('base64url');
     res.cookie(STATE_COOKIE, state, stateCookie);
+    // 로그인 후 돌아갈 화면은 state와 같은 수명의 쿠키에 둔다 (검사를 통과한 내부 경로만)
+    const next = safeNextPath(req.query.next);
+    if (next) res.cookie(NEXT_COOKIE, next, stateCookie);
+    else res.clearCookie(NEXT_COOKIE, { ...stateCookie, maxAge: undefined });
     res.redirect(buildKakaoAuthorizeUrl(deps.kakao, state));
   });
 
   router.get('/kakao/callback', async (req, res) => {
     const savedState = readCookie(req.headers.cookie, STATE_COOKIE);
+    const next = safeNextPath(readCookie(req.headers.cookie, NEXT_COOKIE)) ?? '/';
     res.clearCookie(STATE_COOKIE, { ...stateCookie, maxAge: undefined });
+    res.clearCookie(NEXT_COOKIE, { ...stateCookie, maxAge: undefined });
 
     if (!deps.kakao) {
       res.redirect(failTo('kakao_unavailable'));
@@ -74,7 +92,7 @@ export function createOAuthRouter(deps: OAuthRouteDeps): Router {
       const profile = await fetchKakaoProfile(deps.kakao, req.query.code);
       const result = await deps.auth.loginWithSocial({ provider: 'kakao', ...profile });
       setAuthCookies(res, result.tokens, deps.cookies);
-      res.redirect(`${deps.appOrigin}/`);
+      res.redirect(`${deps.appOrigin}${next}`);
     } catch (error) {
       console.error('[auth:kakao]', error instanceof Error ? error.message : error);
       res.redirect(failTo('kakao_failed'));
