@@ -7,6 +7,7 @@ import { clusterQuota, getInvite, inviteUrl, linkQuota, reissueInvite, type Invi
 import { BoardCanvas, type ClusterAction } from './BoardCanvas'
 import { BoardMenu, MembersButton } from './BoardManage'
 import { MEMO, MEMO_FONT, clearMeasureCache, fitView, toBoard, zoomAtCenter, type View } from './cardLayout'
+import { sourceDiversity } from './diversity'
 import { FeedPanel } from './FeedPanel'
 import { useBoardSync, type BoardStatus } from './useBoardSync'
 import './BoardPage.css'
@@ -284,6 +285,7 @@ export function BoardPage() {
               </button>
             ))}
           </div>
+          <DiversityPanel items={board.items} />
           <div className="board-hint">
             {board.status === 'connecting'
               ? '보드를 불러오는 중…'
@@ -402,5 +404,45 @@ function InviteButton({ boardId, onMessage }: { boardId: string; onMessage: (tex
         </div>
       )}
     </div>
+  )
+}
+
+/** 출처 다양성 (F-11): 보드 기사가 어느 언론사에 몰려 있는지 막대로 보여 준다. 접어 둘 수 있다 */
+function DiversityPanel({ items }: { items: Parameters<typeof sourceDiversity>[0] }) {
+  const [open, setOpen] = useState(true)
+  const diversity = useMemo(() => sourceDiversity(items), [items])
+  if (!diversity) return null
+  const shown = diversity.sources.slice(0, 5)
+  const rest = diversity.sources.length - shown.length
+  return (
+    <section className="diversity" aria-label="출처 다양성">
+      <button type="button" className="diversity__head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span>출처 다양성</span>
+        <span className="diversity__count">
+          언론사 {diversity.sources.length}곳 · 기사 {diversity.total}건 {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && (
+        <>
+          <ul className="diversity__list">
+            {shown.map((s) => (
+              <li key={s.source}>
+                <span className="diversity__name" title={s.source}>
+                  {s.source}
+                </span>
+                <span className="diversity__bar" aria-hidden="true">
+                  <span style={{ width: `${Math.round(s.ratio * 100)}%` }} />
+                </span>
+                <span className="diversity__pct">{Math.round(s.ratio * 100)}%</span>
+              </li>
+            ))}
+          </ul>
+          {rest > 0 && <div className="diversity__rest">그 외 {rest}곳</div>}
+          {diversity.skewedTo && (
+            <p className="diversity__warn">{diversity.skewedTo} 기사가 절반 이상입니다. 다른 언론사 시각도 함께 살펴보세요.</p>
+          )}
+        </>
+      )}
+    </section>
   )
 }
