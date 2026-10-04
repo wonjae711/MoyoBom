@@ -1,6 +1,6 @@
 # 모여봄 — ERD / 테이블 설계
 
-> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.5)
+> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.6)
 >
 > ver.1.1 변경: 소셜 로그인(카카오·네이버) 컬럼 추가, ARTICLES.category 추가, 임베딩 차원 확정(1536), BOARD_CONNECTIONS 중복 방지 제약 추가
 >
@@ -11,6 +11,8 @@
 > ver.1.4 변경 (2026-10-04, F-05): BOARDS·BOARD_MEMBERS·BOARD_INVITES·BOARD_ITEMS·BOARD_EVENTS 구현. BOARD_INVITES는 보드당 1개(UNIQUE(board_id), 재발급 시 교체), BOARD_ITEMS는 카드 종류별 필수값 CHECK·메모 2000자 제한·INDEX(article_id), 보드 삭제 시 하위 데이터 모두 삭제(CASCADE), 사용자 삭제 시 카드 작성자·변경 기록의 user는 null. BOARD_CONNECTIONS(F-10)·CLUSTERS(F-08)·DIGEST_SUBSCRIPTIONS(F-09)는 해당 기능 구현 때 추가
 
 > ver.1.5 변경 (2026-10-04, C-10): ARTICLES에 INDEX(created_at, id) WHERE source_type = 'api_collected' 추가 — 재연결 시 수집 순서 누락분 조회용
+
+> ver.1.6 변경 (2026-10-04, L-02·L-05): BOARDS.seq(보드 변경 순번), BOARD_ITEMS.version(마지막 변경 순번) 추가 — 보드를 바꾸는 트랜잭션은 먼저 seq를 올려(행 잠금) 같은 보드의 변경을 커밋 순서로 줄 세운다. 실시간 이벤트 순서 비교는 updated_at이 아니라 version으로 한다
 
 ### 1. 시각화 다이어그램 (Mermaid)
 
@@ -60,6 +62,7 @@ BOARDS {
 bigint id PK
 bigint owner_id FK
 string title
+bigint seq "보드 변경 순번, 변경마다 +1 (ver.1.6)"
 timestamptz created_at
 timestamptz updated_at
 }
@@ -94,6 +97,7 @@ float prev_position_x "nullable, AI 자동 정렬 전 좌표(원래대로 복원
 float prev_position_y "nullable"
 float rotation
 int z_index
+bigint version "마지막으로 바뀐 때의 BOARDS.seq (ver.1.6)"
 bigint created_by FK
 timestamptz created_at
 timestamptz updated_at

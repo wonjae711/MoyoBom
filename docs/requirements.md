@@ -108,6 +108,7 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 | 소켓 연결 끊김 | 재연결 시 끊기기 직전 수집 위치 뒤에 수집된 기사를 REST로 끝까지 받아 보완 (500건 초과 시 목록 새로 시작) |
 | 다수 동시 접속 시 브로드캐스트 부하 | 초기 스코프는 단일 서버로 충분. 확장 필요 시 Redis Adapter 검토(현재는 제외) |
 | 이벤트 발송 실패 | 로그 기록. 클라이언트는 재연결 시 REST 재조회로 상태 복구 |
+| 피드 REST 조회 실패 (연결은 유지) | 오류를 표시하고 3초·10초·30초 뒤 자동으로 다시 조회, 그 뒤엔 "다시 시도" 버튼. 처음 조회 실패면 처음 조회를, 보완 실패면 남겨 둔 구간을 다시 받는다 (2026-10-04, L-03) |
 
 **수용 기준**
 - [x] 새 기사가 저장되면 3초 이내 접속자 화면에 반영된다
@@ -201,14 +202,14 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 5. 드래그 중에는 card:moving 이벤트를 50–100ms 간격으로 스로틀링해 브로드캐스트만 하고 DB에는 저장하지 않는다. 드래그가 끝났을 때(card:move) 한 번만 board_items·board_events에 저장한다.
 6. 서버는 모든 변경 이벤트에 ack로 성공/실패를 응답하고, 실패 시 클라이언트는 Optimistic Update를 롤백한다.
 7. 사진 카드는 S3 비공개 버킷에 저장한다. 업로드·조회 모두 presigned URL을 사용하고, jpg/png/webp만 허용, 최대 10MB. 카드 삭제 시 S3 객체도 삭제한다.
-8. 구현 (2026-10-04, 백엔드): 소켓 이벤트 — 보낼 때 `board:join`(ack로 스냅샷 — 서버는 멤버 확인 → room 참여 → 스냅샷 순서로 처리해 그 사이 변경을 놓치지 않음, C-11), `card:add`(clientId로 임시 카드와 짝지음)·`card:move`·`card:update`·`card:delete`(모두 ack {ok} / 실패 시 {ok:false, error}), `card:moving`(ack 없음, 중계만) / 받을 때 `card:added`·`card:moved`·`card:updated`·`card:deleted`·`card:moving`, REST 변경 알림 `board:renamed`·`board:deleted`·`board:removed`·`board:members-changed`. 옮긴 카드는 맨 위(z_index 최대)로 올라온다. REST: `GET·POST /api/boards`, `GET·PATCH·DELETE /api/boards/:id`, 초대 `GET·POST /api/boards/:id/invite`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`, 멤버 `DELETE /api/boards/:id/members/:userId`
+8. 구현 (2026-10-04, 백엔드): 소켓 이벤트 — 보낼 때 `board:join`(ack로 스냅샷 — 서버는 멤버 확인 → room 참여 → 스냅샷 순서로 처리해 그 사이 변경을 놓치지 않음, C-11), `card:add`(clientId로 임시 카드와 짝지음)·`card:move`·`card:update`·`card:delete`(모두 ack {ok} / 실패 시 {ok:false, error}), `card:moving`(ack 없음, 중계만) / 받을 때 `card:added`·`card:moved`·`card:updated`·`card:deleted`·`card:moving`, REST 변경 알림 `board:renamed`·`board:deleted`·`board:removed`·`board:members-changed`. 옮긴 카드는 맨 위(z_index 최대)로 올라온다. **변경 순번(2026-10-04, L-02·L-05)**: 보드를 바꾸는 트랜잭션은 먼저 보드 변경 순번(`boards.seq`)을 올려 같은 보드의 변경을 한 줄로 세운다(순번 순서 = 커밋 순서). 카드는 `version`(마지막 변경 순번), 스냅샷은 `board.seq`, `card:deleted`는 `version`을 담는다. 클라이언트는 카드마다 아는 version보다 큰 변경만 적용하고, 삭제 순번 이하의 늦은 이벤트로 카드를 되살리지 않으며, join ack 전에 받은 이벤트는 스냅샷 seq보다 큰 것만 스냅샷 위에 적용한다. REST: `GET·POST /api/boards`, `GET·PATCH·DELETE /api/boards/:id`, 초대 `GET·POST /api/boards/:id/invite`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`, 멤버 `DELETE /api/boards/:id/members/:userId`
 
 **출력**: 모든 참여자에게 동기화된 보드 카드 상태
 
 **예외 처리**
 | 상황 | 처리 방안 |
 |---|---|
-| 동시에 같은 카드를 수정 | 초기 버전은 last-write-wins로 단순화. 이후 필요 시 락/버전 관리로 고도화 |
+| 동시에 같은 카드를 수정 | last-write-wins. "나중"의 기준은 보드 변경 순번(커밋 순서)이며, 모든 참여자 화면과 DB가 같은 최종 값으로 맞는다 |
 | 연결 끊김 | 재연결 시 현재 보드 스냅샷을 다시 불러와 동기화 |
 | 이미 삭제된 카드에 대한 액션 시도 | 무시하고 에러 로그 기록 |
 
@@ -257,7 +258,7 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 2. 보드 생성 시 고유 토큰의 초대 링크 발급
 3. 초대 링크로 접속한 사용자를 board_members에 자동 추가 (로그인 필요)
 4. WebSocket 연결 시에도 JWT를 검증해 인증된 사용자만 보드 room에 join 가능 (room join 시 board_members 소속 여부도 확인)
-5. 토큰 정책(구현 완료): access token(15분)과 refresh token(14일)을 httpOnly·Secure 쿠키로 발급. refresh token은 해시해 refresh_tokens 테이블에 저장하고 로그아웃 시 폐기
+5. 토큰 정책(구현 완료): access token(15분)과 refresh token(14일)을 httpOnly·Secure 쿠키로 발급. refresh token은 해시해 refresh_tokens 테이블에 저장하고 로그아웃 시 폐기. 같은 브라우저의 여러 탭은 갱신·로그아웃을 Web Locks로 한 줄로 세운다(동시에 갱신하면 1회용 회전 때문에 한 탭의 실패 응답이 새 쿠키를 지우기 때문, L-01). 로그아웃 요청이 실패하면(오프라인·서버 오류) 로그인 상태를 유지하고 다시 시도하도록 안내한다(L-04)
 6. 초대 링크 정책(API 구현 완료 — 토큰·7일 만료·재발급 무효화·여러 명 사용, 보드당 유효한 링크 1개 / **로그인 후 초대 페이지 자동 복귀는 미구현**, 보드 화면과 함께 구현 예정): 유효기간 7일, 만료 전까지 여러 명이 사용 가능, owner가 재발급하면 기존 링크 무효화. 비로그인 사용자는 로그인(OAuth state에 복귀 경로 포함) 후 초대 페이지로 자동 복귀
 7. 권한(구현 완료): owner — 보드 삭제·이름 변경·초대 링크 재발급·멤버 내보내기 / editor — 카드 추가·수정·삭제
 
