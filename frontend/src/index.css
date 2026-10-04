@@ -8,7 +8,12 @@
   --color-off-white: #f4f5f6;
   --color-white: #ffffff;
 
-  font-family: system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-sans: 'IBM Plex Sans KR', system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-serif: 'Nanum Myeongjo', serif; /* 제목 */
+  --font-hand: 'Gaegu', cursive; /* 메모 카드 */
+
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
   color: var(--color-black);
   background: var(--color-off-white);
 }
@@ -19,4 +24,47 @@
 
 body {
   margin: 0;
+}
+
+input,
+button,
+textarea {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--color-black);
+  color: var(--color-white);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes feedIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }

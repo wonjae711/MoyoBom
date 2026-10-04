@@ -1,0 +1,53 @@
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 34px;
+  height: 64px;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-gray-light);
+}
+
+.app-header__brand {
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+  color: var(--color-black);
+  text-decoration: none;
+}
+
+.app-header__nav {
+  display: flex;
+  gap: 16px;
+}
+
+.app-header__nav a {
+  font-size: 12.5px;
+  color: var(--color-gray-dark);
+  text-decoration: none;
+}
+
+.app-header__nav a.active {
+  color: var(--color-black);
+  font-weight: 600;
+}
+
+.app-header__spacer {
+  flex: 1;
+}
+
+.app-header__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--color-gray-dark);
+}
+
+.app-header__error {
+  padding: 4px 8px;
+  border-left: 3px solid var(--color-black);
+  background: var(--color-off-white);
+  color: var(--color-black);
+  font-size: 11.5px;
+}

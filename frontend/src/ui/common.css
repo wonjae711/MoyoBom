@@ -1,0 +1,87 @@
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 70;
+  padding: 10px 16px;
+  background: var(--color-black);
+  color: var(--color-white);
+  border-radius: 7px;
+  font-size: 12px;
+  animation: toastIn 0.2s ease-out;
+}
+
+.avatars {
+  display: flex;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid var(--color-white);
+  color: var(--color-white);
+  font-weight: 600;
+  margin-left: -8px;
+}
+
+.avatar:first-child {
+  margin-left: 0;
+}
+
+.avatar--rest {
+  background: var(--color-gray-light);
+  color: var(--color-gray-dark);
+}
+
+/* 목업의 카테고리 탭 */
+.chip {
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--color-gray-light);
+  background: var(--color-white);
+  color: var(--color-gray-dark);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip--on {
+  border-color: var(--color-black);
+  background: var(--color-black);
+  color: var(--color-white);
+}
+
+.btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-black);
+  color: var(--color-white);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  background: var(--color-gray-mid);
+  cursor: default;
+}
+
+.btn--ghost {
+  background: var(--color-white);
+  color: var(--color-black);
+  border: 1px solid var(--color-gray-light);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  border-color: var(--color-black);
+}
+
+.serif {
+  font-family: var(--font-serif);
+}

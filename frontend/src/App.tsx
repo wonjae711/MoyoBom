@@ -1,49 +1,12 @@
-import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { AuthProvider } from './auth/AuthContext'
-import { useAuth } from './auth/useAuth'
 import { AuthPage } from './auth/AuthPage'
 import { RequireAuth } from './auth/RequireAuth'
+import { BoardListPage } from './board/BoardListPage'
+import { BoardPage } from './board/BoardPage'
+import { InvitePage } from './board/InvitePage'
 import { NewsFeed } from './feed/NewsFeed'
-import './App.css'
-
-function AppHeader() {
-  const { user, logout } = useAuth()
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleLogout = async () => {
-    setPending(true)
-    setError(null)
-    try {
-      await logout()
-    } catch (e) {
-      // 로그아웃이 서버에서 끝나지 않았으면 로그인 상태를 그대로 두고 알린다 (L-04)
-      setError(e instanceof Error ? e.message : '로그아웃하지 못했습니다')
-    } finally {
-      setPending(false)
-    }
-  }
-
-  return (
-    <header className="app-header">
-      <span className="app-header__brand">모여봄</span>
-      {user && (
-        <span className="app-header__user">
-          {error && (
-            <span className="app-header__error" role="alert">
-              {error}
-            </span>
-          )}
-          {user.nickname}님
-          <button type="button" onClick={() => void handleLogout()} disabled={pending}>
-            {pending ? '로그아웃 중…' : '로그아웃'}
-          </button>
-        </span>
-      )}
-    </header>
-  )
-}
+import { AppHeader } from './ui/AppHeader'
 
 function App() {
   return (
@@ -54,6 +17,31 @@ function App() {
           <Route path="/signup" element={<AuthPage mode="signup" />} />
           <Route
             path="/"
+            element={
+              <RequireAuth>
+                <BoardListPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/boards/:boardId"
+            element={
+              <RequireAuth>
+                <BoardPage />
+              </RequireAuth>
+            }
+          />
+          {/* 초대 링크: 로그인 전이면 로그인 후 이 화면으로 돌아온다 (C-12) */}
+          <Route
+            path="/invite/:token"
+            element={
+              <RequireAuth>
+                <InvitePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/feed"
             element={
               <RequireAuth>
                 <AppHeader />
