@@ -221,6 +221,23 @@ describe('[F-05] 보드 실시간 동기화 훅', () => {
     ])
   })
 
+  it('[F-03] 링크 요약 카드는 REST 응답으로 바로 보이고, 같은 카드의 브로드캐스트가 와도 한 번만 보인다', async () => {
+    const created = { ...item('40', 11), type: 'article' as const, content: null }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ item: created, reused: false, summarized: true, remaining: 19 }, { status: 201 })),
+    )
+    const { result } = await joined()
+    let res: Awaited<ReturnType<typeof result.current.addLink>> | undefined
+    await act(async () => {
+      res = await result.current.addLink('https://news.example/a', 0, 0)
+    })
+    expect(res?.remaining).toBe(19)
+    act(() => fake.socket.fire('card:added', { boardId: '7', item: created }))
+    expect(result.current.items.map((i) => i.id)).toEqual(['40'])
+    vi.unstubAllGlobals()
+  })
+
   it('연결이 끊긴 상태에서의 변경은 저장하지 못했다고 바로 알린다', async () => {
     const { result, onError } = await joined([item('1', 8, 80)])
     fake.socket.connected = false

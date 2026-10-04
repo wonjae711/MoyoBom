@@ -2,7 +2,7 @@ import type pg from 'pg';
 
 /** 모든 테이블을 비운다 (users·articles를 지우면 보드·카드 등 딸린 데이터도 함께 지워진다) */
 export async function resetDb(pool: pg.Pool): Promise<void> {
-  await pool.query('TRUNCATE users, articles RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE users, articles, ai_usage RESTART IDENTITY CASCADE');
 }
 
 /** 테스트용 이메일 가입 사용자. id를 돌려준다 */

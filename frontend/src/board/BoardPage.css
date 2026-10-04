@@ -253,6 +253,75 @@
   color: var(--color-gray-mid);
 }
 
+.feed-panel__link {
+  flex: none;
+  padding: 0 14px 12px;
+}
+
+.link-box {
+  padding: 12px;
+  border: 1px dashed var(--color-gray-light);
+  border-radius: 8px;
+  background: var(--color-off-white);
+}
+
+.link-box__label {
+  font-size: 11px;
+  color: var(--color-gray-dark);
+  margin-bottom: 8px;
+}
+
+.link-box__row {
+  display: flex;
+  gap: 6px;
+}
+
+.link-box__row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--color-gray-light);
+  border-radius: 5px;
+  background: var(--color-white);
+  font-size: 11px;
+  outline: none;
+}
+
+.link-box__row input:focus {
+  border-color: var(--color-black);
+}
+
+.link-box__row button {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: var(--color-black);
+  color: var(--color-white);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.link-box__row button:disabled {
+  background: var(--color-gray-mid);
+  cursor: default;
+}
+
+.link-box__error {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--color-black);
+  background: var(--color-white);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.link-box__quota {
+  margin-top: 7px;
+  font-size: 10px;
+  color: var(--color-gray-mid);
+}
+
 /* ---------- 캔버스 ---------- */
 
 .board-main {

@@ -32,6 +32,12 @@ const envSchema = z.object({
   NAVER_CLIENT_SECRET: z.string().min(1),
   GUARDIAN_API_KEY: z.string().min(1),
   OPENAI_API_KEY: z.string().min(1),
+  /** 링크 요약(F-03)에 쓰는 OpenAI 모델 */
+  OPENAI_SUMMARY_MODEL: z.string().min(1).default('gpt-5.4-mini'),
+  /** 링크 요약 하루 한도 (2026-10-04 확정 B: 계정·IP·서비스 전체, 한국 시간 자정에 초기화) */
+  AI_SUMMARY_LIMIT_USER: z.coerce.number().int().min(0).default(20),
+  AI_SUMMARY_LIMIT_IP: z.coerce.number().int().min(0).default(50),
+  AI_SUMMARY_LIMIT_TOTAL: z.coerce.number().int().min(0).default(300),
 });
 
 export type Env = z.infer<typeof envSchema>;

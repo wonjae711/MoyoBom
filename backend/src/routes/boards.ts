@@ -2,6 +2,9 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type { BoardService } from '../boards/service.js';
 import { BoardError, type BoardErrorCode } from '../boards/types.js';
+import { LinkError, type LinkErrorCode } from '../links/safeFetch.js';
+import { QuotaError, UnreadableError, type LinkService } from '../links/service.js';
+import { SummaryError } from '../ai/summarizer.js';
 import type { BoardNotifier } from '../realtime/boardSync.js';
 
 const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요').max(50) });
@@ -12,7 +15,22 @@ const STATUS: Record<BoardErrorCode, number> = { not_found: 404, forbidden: 403,
 export interface BoardRouteDeps {
   boards: BoardService;
   notifier: BoardNotifier;
+  /** 링크 요약(F-03). 없으면 해당 API는 503 */
+  links?: LinkService;
 }
+
+const coord = z.number().finite().min(-1_000_000).max(1_000_000);
+const linkSchema = z.object({ url: z.string().trim().min(1).max(2000), x: coord.default(0), y: coord.default(0) });
+
+const LINK_STATUS: Record<LinkErrorCode, number> = {
+  invalid_url: 400,
+  blocked: 400,
+  not_html: 422,
+  too_large: 422,
+  too_many_redirects: 422,
+  fetch_failed: 502,
+  timeout: 504,
+};
 
 /** BoardError는 정해진 상태 코드로, 그 밖의 에러는 공통 에러 처리(500)로 넘긴다 */
 function sendError(res: Response, error: unknown): void {
@@ -25,7 +43,7 @@ function badTitle(res: Response, error: z.ZodError): void {
 }
 
 /** /api/boards — 보드 목록·생성·조회·수정·삭제(F-05·F-06), 초대 링크·멤버 관리(F-07). 모두 로그인 필요 */
-export function createBoardsRouter({ boards, notifier }: BoardRouteDeps): Router {
+export function createBoardsRouter({ boards, notifier, links }: BoardRouteDeps): Router {
   const router = Router();
 
   router.param('boardId', (_req, res, next, value: string) => {
@@ -69,6 +87,44 @@ export function createBoardsRouter({ boards, notifier }: BoardRouteDeps): Router
       await notifier.boardDeleted(req.params.boardId);
       res.status(204).end();
     } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  /** 오늘 남은 링크 요약 횟수 (F-03) */
+  router.get('/:boardId/links/quota', async (_req, res) => {
+    if (!links) return void res.status(503).json({ error: '링크 요약을 사용할 수 없습니다' });
+    res.json({ remaining: await links.remaining(res.locals.userId!) });
+  });
+
+  /**
+   * 링크로 기사 카드 추가 (F-03): 페이지를 가져와 AI로 요약하고 보드에 카드로 올린다.
+   * 실패 이유는 정해진 문구로만 알린다 (내부 주소·원본 에러는 응답에 넣지 않음)
+   */
+  router.post('/:boardId/links', async (req, res) => {
+    if (!links) return void res.status(503).json({ error: '링크 요약을 사용할 수 없습니다' });
+    const parsed = linkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '기사 주소를 입력해 주세요', fields: parsed.error.issues.map((i) => i.path.join('.')) });
+      return;
+    }
+    try {
+      const result = await links.addLink({
+        boardId: req.params.boardId,
+        userId: res.locals.userId!,
+        ip: req.ip ?? 'unknown',
+        ...parsed.data,
+      });
+      notifier.cardAdded(req.params.boardId, result.item, res.locals.userId!);
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof LinkError) return void res.status(LINK_STATUS[error.code]).json({ error: error.message, code: error.code });
+      if (error instanceof QuotaError) return void res.status(429).json({ error: error.message, code: 'quota', scope: error.scope });
+      if (error instanceof UnreadableError) return void res.status(422).json({ error: error.message, code: 'unreadable' });
+      if (error instanceof SummaryError) {
+        console.error('[links] 요약 실패:', error.message);
+        return void res.status(502).json({ error: 'AI 요약에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'summary_failed' });
+      }
       sendError(res, error);
     }
   });

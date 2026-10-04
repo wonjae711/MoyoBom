@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import { getBoard } from './api'
+import { addLink as postLink, getBoard } from './api'
 import { refreshSession } from '../api/client'
 import type { FeedArticle } from '../feed/types'
 import { applyEvent, emptyBoardState, fromSnapshot, stackedItems, type BoardEvent, type BoardState } from './boardState'
@@ -328,6 +328,16 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     [send, forget, fail],
   )
 
+  /** 링크 요약 카드 추가 (F-03). REST로 처리되고, 서버가 다른 참여자에게도 card:added로 알린다 */
+  const addLink = useCallback(
+    async (url: string, x: number, y: number) => {
+      const result = await postLink(boardId, url, x, y)
+      settle(result.item)
+      return result
+    },
+    [boardId, settle],
+  )
+
   const saving = overlays.adds.size + overlays.moves.size + overlays.memos.size + overlays.deleting.size > 0
 
   return {
@@ -343,5 +353,6 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     dragCard,
     updateMemo,
     deleteCard,
+    addLink,
   }
 }

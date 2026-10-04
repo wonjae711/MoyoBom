@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { ApiError } from '../api/client'
 import { formatRelativeTime } from '../feed/merge'
 import { CATEGORY_LABELS, type CategoryCode, type FeedArticle } from '../feed/types'
 import { useNewsFeed } from '../feed/useNewsFeed'
@@ -10,7 +11,19 @@ const TABS: ('all' | CategoryCode)[] = ['all', ...(Object.keys(CATEGORY_LABELS) 
  * 보드 왼쪽 실시간 뉴스 피드 (F-02 + F-05). 기사를 오른쪽 보드로 끌어다 놓거나 "+ 보드에" 버튼으로 추가한다.
  * 카테고리 탭은 받아 둔 기사 안에서 거른다.
  */
-export function FeedPanel({ onAdd, now }: { onAdd: (article: FeedArticle) => void; now: Date }) {
+export function FeedPanel({
+  onAdd,
+  onSubmitLink,
+  linkRemaining,
+  now,
+}: {
+  onAdd: (article: FeedArticle) => void
+  /** 링크 요약 카드 추가 (F-03). 실패하면 던진다 */
+  onSubmitLink: (url: string) => Promise<void>
+  /** 오늘 남은 AI 요약 횟수 (모르면 null) */
+  linkRemaining: number | null
+  now: Date
+}) {
   const { articles, status, loading, error, highlighted, hasMore, loadMore, retry } = useNewsFeed()
   const [tab, setTab] = useState<'all' | CategoryCode>('all')
   const visible = tab === 'all' ? articles : articles.filter((a) => a.category === tab)
@@ -86,7 +99,60 @@ export function FeedPanel({ onAdd, now }: { onAdd: (article: FeedArticle) => voi
         )}
       </div>
 
+      {/* 피드가 길어도 항상 보이도록 목록 아래에 고정 */}
+      <div className="feed-panel__link">
+        <LinkBox onSubmit={onSubmitLink} remaining={linkRemaining} />
+      </div>
       <div className="feed-panel__foot">카드를 오른쪽 보드로 끌어다 놓으세요</div>
     </aside>
+  )
+}
+
+/** 수집되지 않은 기사를 링크로 추가 (F-03, 디자인 목업의 "AI 요약" 상자) */
+function LinkBox({ onSubmit, remaining }: { onSubmit: (url: string) => Promise<void>; remaining: number | null }) {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!url.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onSubmit(url.trim())
+      setUrl('')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '링크를 추가하지 못했습니다. 잠시 후 다시 시도해 주세요')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="link-box" onSubmit={submit}>
+      <div className="link-box__label">수집되지 않은 기사는 링크를 붙여넣으세요</div>
+      <div className="link-box__row">
+        <input
+          type="url"
+          inputMode="url"
+          placeholder="https://..."
+          value={url}
+          maxLength={2000}
+          onChange={(e) => setUrl(e.target.value)}
+          disabled={busy}
+          aria-label="기사 주소"
+        />
+        <button type="submit" disabled={busy || !url.trim()}>
+          {busy ? '요약 중…' : 'AI 요약'}
+        </button>
+      </div>
+      {error && (
+        <p className="link-box__error" role="alert">
+          {error}
+        </p>
+      )}
+      {remaining !== null && <div className="link-box__quota">오늘 남은 AI 요약 {remaining}회</div>}
+    </form>
   )
 }

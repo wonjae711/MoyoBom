@@ -18,6 +18,8 @@ export interface AppDeps {
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
+  // 같은 서버의 프록시(Vite 개발 서버·nginx)가 붙인 X-Forwarded-For만 믿는다 — req.ip가 실제 접속자 IP가 되도록 (AI 한도·로그인 제한)
+  app.set('trust proxy', 'loopback');
   app.use(express.json({ limit: '1mb' }));
   app.use('/api', checkOrigin(deps.appOrigin));
 

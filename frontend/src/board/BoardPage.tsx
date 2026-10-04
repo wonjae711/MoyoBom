@@ -4,7 +4,7 @@ import { ApiError } from '../api/client'
 import type { FeedArticle } from '../feed/types'
 import { Avatars } from '../ui/Avatars'
 import { useNow, useToast } from '../ui/hooks'
-import { getInvite, inviteUrl, reissueInvite, type Invite } from './api'
+import { getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
 import { BoardCanvas } from './BoardCanvas'
 import { MEMO, MEMO_FONT, clearMeasureCache, fitView, toBoard, zoomAtCenter, type View } from './cardLayout'
 import { FeedPanel } from './FeedPanel'
@@ -32,6 +32,13 @@ export function BoardPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [fontsVersion, setFontsVersion] = useState(0)
+  const [linkRemaining, setLinkRemaining] = useState<number | null>(null)
+
+  useEffect(() => {
+    linkQuota(boardId)
+      .then(setLinkRemaining)
+      .catch(() => setLinkRemaining(null))
+  }, [boardId])
 
   const members = useMemo(() => new Map(board.members.map((m) => [m.userId, m])), [board.members])
 
@@ -82,6 +89,26 @@ export function BoardPage() {
         toast.show('보드에 카드가 추가되었습니다')
       }
     })
+  }
+
+  /** 링크 요약 카드는 지금 보는 화면 가운데에 놓는다 */
+  const submitLink = async (url: string) => {
+    const at = viewCenter()
+    try {
+      const result = await board.addLink(url, at.x, at.y)
+      setLinkRemaining(result.remaining)
+      setSelectedId(result.item.id)
+      toast.show(
+        result.reused
+          ? '이미 저장된 기사를 카드로 추가했습니다'
+          : result.summarized
+            ? 'AI 요약 카드를 추가했습니다'
+            : '본문을 읽지 못해 페이지 설명으로 카드를 만들었습니다',
+      )
+    } catch (error) {
+      linkQuota(boardId).then(setLinkRemaining).catch(() => {})
+      throw error
+    }
   }
 
   const addMemo = () => {
@@ -155,7 +182,12 @@ export function BoardPage() {
       </header>
 
       <div className="board-body">
-        <FeedPanel onAdd={(article) => addArticle(article)} now={now} />
+        <FeedPanel
+          onAdd={(article) => addArticle(article)}
+          onSubmitLink={submitLink}
+          linkRemaining={linkRemaining}
+          now={now}
+        />
 
         <main className="board-main">
           <BoardCanvas

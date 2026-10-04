@@ -11,6 +11,9 @@ import { attachSocketAuth } from './realtime/auth.js';
 import { attachNewsFeed } from './realtime/newsFeed.js';
 import { attachBoardSync, type BoardNotifier } from './realtime/boardSync.js';
 import { BoardService } from './boards/service.js';
+import { AiQuota } from './ai/quota.js';
+import { createOpenAiSummarizer } from './ai/summarizer.js';
+import { LinkService } from './links/service.js';
 
 const env = loadEnv();
 const pool = createPool(env.DATABASE_URL);
@@ -24,7 +27,18 @@ const notifier: BoardNotifier = {
   boardDeleted: (...args) => boardNotifier.boardDeleted(...args),
   membersChanged: (...args) => boardNotifier.membersChanged(...args),
   memberRemoved: (...args) => boardNotifier.memberRemoved(...args),
+  cardAdded: (...args) => boardNotifier.cardAdded(...args),
 };
+const links = new LinkService({
+  pool,
+  boards,
+  summarizer: createOpenAiSummarizer({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
+  quota: new AiQuota(pool, {
+    user: env.AI_SUMMARY_LIMIT_USER,
+    ip: env.AI_SUMMARY_LIMIT_IP,
+    total: env.AI_SUMMARY_LIMIT_TOTAL,
+  }),
+});
 const app = createApp({
   checkDb: () => pingDb(pool),
   articles: { listFeed: (query) => listFeed(pool, query) },
@@ -43,7 +57,7 @@ const app = createApp({
           }
         : null,
   },
-  boards: { boards, notifier },
+  boards: { boards, notifier, links },
   appOrigin: env.APP_ORIGIN,
 });
 const server = createServer(app);

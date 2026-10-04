@@ -321,14 +321,30 @@ export class BoardService {
     return toItem(rows[0]);
   }
 
-  /** 새 카드는 맨 위(z_index 최대+1)에 놓는다 */
-  async addItem(boardId: string, userId: string, input: NewItemInput): Promise<BoardItem> {
+  /**
+   * 새 카드는 맨 위(z_index 최대+1)에 놓는다.
+   * 사용자가 링크로 추가한 기사(user_submitted)는 그 기사가 이미 이 보드에 있을 때만 id로 다시 올릴 수 있다 —
+   * 다른 보드의 제출 기사를 id 추측으로 가져오지 못하게 한다 (C-06). 링크 추가(F-03)는 allowSubmitted로 통과한다
+   */
+  async addItem(
+    boardId: string,
+    userId: string,
+    input: NewItemInput,
+    options: { allowSubmitted?: boolean } = {},
+  ): Promise<BoardItem> {
     return this.tx(async (client) => {
       await this.requireRole(boardId, userId, 'member', client);
       const seq = await this.bump(client, boardId);
       if (input.type === 'article') {
-        const { rowCount } = await client.query('SELECT 1 FROM articles WHERE id = $1', [input.articleId]);
-        if (!rowCount) throw new BoardError('invalid', '없는 기사입니다');
+        const { rows } = await client.query<{ source_type: string; on_board: boolean }>(
+          `SELECT a.source_type,
+             EXISTS (SELECT 1 FROM board_items bi WHERE bi.board_id = $2 AND bi.article_id = a.id) AS on_board
+           FROM articles a WHERE a.id = $1`,
+          [input.articleId, boardId],
+        );
+        const article = rows[0];
+        const hidden = article?.source_type === 'user_submitted' && !article.on_board && !options.allowSubmitted;
+        if (!article || hidden) throw new BoardError('invalid', '없는 기사입니다');
       }
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO board_items (board_id, item_type, article_id, content, position_x, position_y, z_index, created_by, version)

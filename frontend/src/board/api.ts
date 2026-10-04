@@ -1,5 +1,5 @@
 import { apiFetch } from '../api/client'
-import type { BoardSnapshot, BoardSummary } from './types'
+import type { BoardItem, BoardSnapshot, BoardSummary } from './types'
 
 // 백엔드 backend/src/routes/boards.ts (F-05·F-06·F-07 초대)
 
@@ -44,6 +44,25 @@ export function previewInvite(token: string): Promise<InvitePreview> {
 
 export function acceptInvite(token: string): Promise<{ boardId: string; joined: boolean }> {
   return apiFetch(`/api/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' })
+}
+
+export interface LinkResult {
+  item: BoardItem
+  /** 이미 저장된 기사를 다시 씀 (AI 호출 없음) */
+  reused: boolean
+  /** AI로 요약함 (false면 페이지 설명을 그대로 씀) */
+  summarized: boolean
+  /** 오늘 남은 AI 요약 횟수 */
+  remaining: number
+}
+
+/** 링크로 기사 카드 추가 (F-03): 서버가 페이지를 가져와 AI로 요약하고 보드에 올린다 */
+export function addLink(boardId: string, url: string, x: number, y: number): Promise<LinkResult> {
+  return apiFetch<LinkResult>(`/api/boards/${boardId}/links`, { method: 'POST', body: JSON.stringify({ url, x, y }) })
+}
+
+export function linkQuota(boardId: string): Promise<number> {
+  return apiFetch<{ remaining: number }>(`/api/boards/${boardId}/links/quota`).then((r) => r.remaining)
 }
 
 export const inviteUrl = (token: string) => `${window.location.origin}/invite/${token}`

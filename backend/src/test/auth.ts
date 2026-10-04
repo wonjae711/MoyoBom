@@ -54,6 +54,7 @@ export function recordingNotifier() {
       boardDeleted: async (boardId: string) => void calls.push(['boardDeleted', boardId]),
       membersChanged: (boardId: string) => void calls.push(['membersChanged', boardId]),
       memberRemoved: async (boardId: string, userId: string) => void calls.push(['memberRemoved', boardId, userId]),
+      cardAdded: (boardId: string, item: { id: string }, by: string) => void calls.push(['cardAdded', boardId, item.id, by]),
     },
   };
 }

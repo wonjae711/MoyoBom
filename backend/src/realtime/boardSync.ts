@@ -1,7 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import type { BoardService } from '../boards/service.js';
-import { BoardError } from '../boards/types.js';
+import { BoardError, type BoardItem } from '../boards/types.js';
 
 export const boardRoom = (boardId: string) => `board:${boardId}`;
 
@@ -38,6 +38,8 @@ export interface BoardNotifier {
   membersChanged(boardId: string): void;
   /** 내보낸 사람의 연결을 보드 room에서 빼고 알린다 */
   memberRemoved(boardId: string, userId: string): Promise<void>;
+  /** REST로 추가된 카드(링크 요약 F-03)를 접속 중인 모두에게 알린다 — 요청한 사람에게도 가지만 version 규칙으로 한 번만 반영된다 */
+  cardAdded(boardId: string, item: BoardItem, by: string): void;
 }
 
 /**
@@ -141,6 +143,9 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
     },
     membersChanged(boardId) {
       io.to(boardRoom(boardId)).emit('board:members-changed', { boardId });
+    },
+    cardAdded(boardId, item, by) {
+      io.to(boardRoom(boardId)).emit('card:added', { boardId, item, by });
     },
     async memberRemoved(boardId, removedUserId) {
       const sockets = await io.in(boardRoom(boardId)).fetchSockets();

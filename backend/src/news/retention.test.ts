@@ -34,4 +34,25 @@ describe.skipIf(!testDatabaseUrl)('미사용 기사 30일 정리 (DB, F-01 처�
     expect(rows.map((r) => r.id)).toEqual([recent, oldOnBoard]);
     expect(rows.map((r) => r.id)).not.toContain(old);
   });
+
+  it('[C-06] 링크로 추가한 기사도 어떤 보드에도 없게 된 지 30일이 지나면 지운다', async () => {
+    const userId = await createUser(pool, '기자');
+    const insert = (link: string) =>
+      pool
+        .query<{ id: string }>(
+          `INSERT INTO articles (title, source, original_link, source_type, submitted_by, created_at)
+           VALUES ($1, 's', $1, 'user_submitted', $2, $3) RETURNING id`,
+          [link, userId, daysAgo(31)],
+        )
+        .then((r) => r.rows[0]!.id);
+    await insert('https://e.com/orphan');
+    const kept = await insert('https://e.com/on-board');
+    const boards = new BoardService(pool);
+    const board = await boards.createBoard(userId, '보드');
+    await boards.addItem(board.id, userId, { type: 'article', articleId: kept, x: 0, y: 0 }, { allowSubmitted: true });
+
+    expect(await deleteStaleArticles(pool)).toBe(1);
+    const { rows } = await pool.query<{ id: string }>('SELECT id FROM articles');
+    expect(rows.map((r) => r.id)).toEqual([kept]);
+  });
 });
