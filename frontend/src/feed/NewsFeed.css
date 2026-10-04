@@ -154,3 +154,22 @@
     animation: none;
   }
 }
+
+.feed__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.feed__retry {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--color-black);
+  border-radius: 6px;
+  background: var(--color-white);
+  color: var(--color-black);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}

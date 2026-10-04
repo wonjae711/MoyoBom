@@ -21,7 +21,7 @@ function useNow(intervalMs = 60_000): Date {
 }
 
 export function NewsFeed() {
-  const { articles, status, loading, error, highlighted, hasMore, loadMore } = useNewsFeed()
+  const { articles, status, loading, error, highlighted, hasMore, loadMore, retry } = useNewsFeed()
   const now = useNow()
 
   return (
@@ -34,7 +34,14 @@ export function NewsFeed() {
         </span>
       </header>
 
-      {error && <p className="feed__error">{error}</p>}
+      {error && (
+        <div className="feed__error" role="alert">
+          <span>{error}</span>
+          <button type="button" className="feed__retry" onClick={() => void retry()}>
+            다시 시도
+          </button>
+        </div>
+      )}
       {loading && <p className="feed__empty">기사를 불러오는 중…</p>}
       {!loading && articles.length === 0 && !error && (
         <p className="feed__empty">아직 수집된 기사가 없습니다. 잠시 후 자동으로 표시됩니다.</p>

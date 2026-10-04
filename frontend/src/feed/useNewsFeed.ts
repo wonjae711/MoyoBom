@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
-import { apiFetch, refreshSession } from '../api/client'
+import { UnauthorizedError, apiFetch, refreshSession } from '../api/client'
 import { CATCH_UP_PAGE_SIZE, catchUp, catchUpStart, cursorOf, laterCursor } from './catchUp'
 import { mergeArticles } from './merge'
 import { NEW_ARTICLES_EVENT, type FeedArticle, type FeedPage, type NewArticlesPayload } from './types'
@@ -8,6 +8,8 @@ import { NEW_ARTICLES_EVENT, type FeedArticle, type FeedPage, type NewArticlesPa
 const PAGE_SIZE = 30
 /** 새로 들어온 기사를 강조 표시하는 시간 */
 const HIGHLIGHT_MS = 4000
+/** 피드 조회가 실패하면 연결이 끊기지 않아도 이 간격으로 다시 시도한다 (L-03). 그 뒤로는 "다시 시도" 버튼 */
+export const AUTO_RETRY_DELAYS_MS = [3_000, 10_000, 30_000]
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
@@ -33,6 +35,7 @@ const earlierCursor = (a: string | null, b: string | null) => (laterCursor(a, b)
  * - 재연결·truncated: 끊기기 직전 위치 뒤에 수집된 기사를 수집 순서대로 끝까지 받아 합친다 (C-10)
  *   너무 많이 놓쳤으면(최대 500건 초과) 이어 받지 않고 목록을 최신 페이지로 새로 시작한다
  * - 인증: 소켓 연결이 거절되면 토큰을 갱신해 다시 연결 (F-07)
+ * - 실패: 처음 조회나 누락분 보완이 실패하면 몇 번 자동으로 다시 시도하고, 그 뒤엔 retry()로 다시 시도 (L-03)
  */
 export function useNewsFeed() {
   const [articles, setArticles] = useState<FeedArticle[]>([])
@@ -53,6 +56,8 @@ export function useNewsFeed() {
   const gapFrom = useRef<string | null | undefined>(undefined)
   const syncing = useRef<Promise<void> | null>(null)
   const syncAgain = useRef(false)
+  const failures = useRef(0)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const highlight = useCallback((ids: string[]) => {
     if (ids.length === 0) return
@@ -101,34 +106,54 @@ export function useNewsFeed() {
       highlight(result.articles.filter((a) => !known.has(a.id)).map((a) => a.id))
       collected.current = laterCursor(collected.current, result.reached)
     } catch (e) {
-      // 실패하면 놓친 구간을 되살려 다음 연결 때 다시 받는다
+      // 실패하면 놓친 구간을 되살려 다음 시도(자동 재시도·다시 시도·재연결) 때 다시 받는다
       gapFrom.current = gapFrom.current === undefined ? from : earlierCursor(from, gapFrom.current)
       throw e
     }
   }, [loadLatest, highlight])
 
-  /** 한 번에 하나만 실행하고, 실행 중에 다시 요청되면 끝난 뒤 한 번 더 실행한다 */
-  const sync = useCallback(() => {
+  const clearRetry = useCallback(() => {
+    if (retryTimer.current) clearTimeout(retryTimer.current)
+    retryTimer.current = null
+  }, [])
+
+  /**
+   * 한 번에 하나만 실행하고, 실행 중에 다시 요청되면 끝난 뒤 한 번 더 실행한다.
+   * 실패하면(로그인 만료 제외) 정해진 간격으로 다시 실행한다 — 처음 조회 실패면 처음 조회를, 보완 실패면 남겨 둔 구간을 다시 받는다
+   */
+  const sync = useCallback(function sync(): Promise<void> {
     if (syncing.current) {
       syncAgain.current = true
       return syncing.current
     }
+    clearRetry()
     syncing.current = (async () => {
       try {
         do {
           syncAgain.current = false
           await runSync()
         } while (syncAgain.current)
+        failures.current = 0
         setError(null)
       } catch (e) {
         setError(e instanceof Error ? e.message : '피드를 불러오지 못했습니다')
+        if (!(e instanceof UnauthorizedError)) {
+          const delay = AUTO_RETRY_DELAYS_MS[failures.current++]
+          if (delay !== undefined) retryTimer.current = setTimeout(() => void sync(), delay)
+        }
       } finally {
         setLoading(false)
         syncing.current = null
       }
     })()
     return syncing.current
-  }, [runSync])
+  }, [runSync, clearRetry])
+
+  /** "다시 시도" 버튼: 자동 재시도 횟수를 새로 세고 바로 다시 받는다 */
+  const retry = useCallback(() => {
+    failures.current = 0
+    return sync()
+  }, [sync])
 
   const loadMore = useCallback(async () => {
     if (!nextCursor) return
@@ -179,9 +204,10 @@ export function useNewsFeed() {
     })
 
     return () => {
+      clearRetry()
       socket.disconnect()
     }
-  }, [sync, markGap, highlight])
+  }, [sync, markGap, highlight, clearRetry])
 
-  return { articles, status, loading, error, highlighted, hasMore: nextCursor !== null, loadMore }
+  return { articles, status, loading, error, highlighted, hasMore: nextCursor !== null, loadMore, retry }
 }
