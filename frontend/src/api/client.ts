@@ -31,16 +31,28 @@ export function onUnauthorized(listener: Listener): () => void {
 let refreshing: Promise<boolean> | null = null
 
 /**
+ * 같은 브라우저의 다른 탭과도 한 번에 하나만 실행한다 (L-01, Web Locks API).
+ * 지원하지 않는 환경에서는 그냥 실행한다 (탭 안에서의 중복 방지는 refreshing이 맡음).
+ */
+function acrossTabs<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+  return locks ? locks.request('moyobom-auth-refresh', fn) : fn()
+}
+
+/**
  * refresh token 쿠키로 새 access token을 받는다.
  * 여러 요청이 동시에 401을 받아도 갱신 요청은 한 번만 보낸다 (refresh token은 한 번 쓰면 바뀌기 때문).
+ * 여러 탭이 동시에 갱신하면 한 탭만 성공하고 나머지 탭의 실패 응답이 새 쿠키를 지울 수 있어서,
+ * 탭 사이에서도 줄을 세운다. 기다린 탭은 앞 탭이 받은 새 쿠키로 요청하므로 실패하지 않는다.
  */
 export function refreshSession(): Promise<boolean> {
-  refreshing ??= fetch('/api/auth/refresh', { method: 'POST' })
-    .then((res) => res.ok)
-    .catch(() => false)
-    .finally(() => {
-      refreshing = null
-    })
+  refreshing ??= acrossTabs(() =>
+    fetch('/api/auth/refresh', { method: 'POST' })
+      .then((res) => res.ok)
+      .catch(() => false),
+  ).finally(() => {
+    refreshing = null
+  })
   return refreshing
 }
 
