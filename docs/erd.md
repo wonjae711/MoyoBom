@@ -1,6 +1,6 @@
 # 모여봄 — ERD / 테이블 설계
 
-> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.4)
+> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-04, ver.1.5)
 >
 > ver.1.1 변경: 소셜 로그인(카카오·네이버) 컬럼 추가, ARTICLES.category 추가, 임베딩 차원 확정(1536), BOARD_CONNECTIONS 중복 방지 제약 추가
 >
@@ -9,6 +9,8 @@
 > ver.1.3 변경 (2026-10-04): 실제 마이그레이션과 맞춤 — USERS 이메일 중복 검사는 대소문자 무시(lower(email)), 가입 방식별 필수값 CHECK 추가, ARTICLES.submitted_by FK(사용자 삭제 시 null), REFRESH_TOKENS.user_id FK(사용자 삭제 시 함께 삭제)·INDEX(user_id). 구현 완료 테이블: ARTICLES, USERS, REFRESH_TOKENS
 >
 > ver.1.4 변경 (2026-10-04, F-05): BOARDS·BOARD_MEMBERS·BOARD_INVITES·BOARD_ITEMS·BOARD_EVENTS 구현. BOARD_INVITES는 보드당 1개(UNIQUE(board_id), 재발급 시 교체), BOARD_ITEMS는 카드 종류별 필수값 CHECK·메모 2000자 제한·INDEX(article_id), 보드 삭제 시 하위 데이터 모두 삭제(CASCADE), 사용자 삭제 시 카드 작성자·변경 기록의 user는 null. BOARD_CONNECTIONS(F-10)·CLUSTERS(F-08)·DIGEST_SUBSCRIPTIONS(F-09)는 해당 기능 구현 때 추가
+
+> ver.1.5 변경 (2026-10-04, C-10): ARTICLES에 INDEX(created_at, id) WHERE source_type = 'api_collected' 추가 — 재연결 시 수집 순서 누락분 조회용
 
 ### 1. 시각화 다이어그램 (Mermaid)
 
@@ -155,6 +157,7 @@ timestamptz created_at
 | ARTICLES | UNIQUE(original_link) | 동일 기사 중복 수집 방지 (F-01) |
 | ARTICLES | INDEX(category, published_at) | 카테고리별 피드·필터 조회 성능 (F-02, F-04) |
 | ARTICLES | INDEX(published_at) | 전체 최신순 피드 조회 성능 (F-02) |
+| ARTICLES | INDEX(created_at, id) WHERE source_type = 'api_collected' | 재연결 시 수집 순서로 누락분 조회 (F-02, ver.1.5) |
 | ARTICLES | CHECK(api_collected면 category·published_at 필수) | API 수집 기사의 필수값 보장. null 허용은 user_submitted만 |
 | REFRESH_TOKENS | UNIQUE(token_hash) | refresh token 조회·폐기 (F-07) |
 | REFRESH_TOKENS | INDEX(user_id), FK ON DELETE CASCADE | 사용자별 토큰 조회, 탈퇴 시 토큰 함께 삭제 |

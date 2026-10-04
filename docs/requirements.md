@@ -95,8 +95,9 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 **처리 로직**
 1. 클라이언트가 접속하면 Socket.io news-feed room에 join한다.
 2. F-01에서 신규 기사가 저장되면 서버가 수집 1회분을 최신순으로 묶어 io.to('news-feed').emit('feed:new-articles', { articles, total, truncated })를 호출한다. 한 번에 최대 50건만 보내고, 넘치면 truncated=true로 알린다 (2026-10-02 변경: 기사 1건당 이벤트 1번은 첫 수집 때 수천 번 emit되어 묶음 방식으로 바꿈).
-3. 클라이언트는 이벤트 수신 시 피드 최상단에 새 카드를 추가한다. truncated면 REST로 최신 목록을 다시 조회한다.
-   - REST: `GET /api/articles?limit=30&category=&before=<커서>` — 최신순, 커서 기반 "더 보기". user_submitted 기사는 제외
+3. 클라이언트는 이벤트 수신 시 피드 최상단에 새 카드를 추가한다. truncated면 REST로 놓친 구간을 받는다.
+   - REST: `GET /api/articles?limit=30&category=&before=<커서>` — 최신순, 커서 기반 "더 보기". user_submitted 기사는 제외. 응답의 `collectedCursor`는 지금까지 수집된 위치
+   - 누락분 보완(2026-10-04, C-10): `GET /api/articles?limit=100&collectedAfter=<수집 위치>` — 그 위치 뒤에 수집된 기사를 수집 순서로 끝까지 받는다. 발행 시각이 오래됐지만 늦게 수집된 기사도 포함. 시작 위치는 1분 앞당겨 겹치게 받고, 500건 넘게 놓쳤으면 목록을 최신 페이지로 새로 시작한다
 4. (고도화) 키워드/카테고리별로 room을 세분화(news-feed:{category})해 관심사 기반 구독 지원.
 
 **출력**: 클라이언트 화면에 실시간 반영된 새 기사 카드
@@ -104,7 +105,7 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 **예외 처리**
 | 상황 | 처리 방안 |
 |---|---|
-| 소켓 연결 끊김 | 재연결 시 REST API로 최근 기사 목록을 재조회해 누락분 보완 |
+| 소켓 연결 끊김 | 재연결 시 끊기기 직전 수집 위치 뒤에 수집된 기사를 REST로 끝까지 받아 보완 (500건 초과 시 목록 새로 시작) |
 | 다수 동시 접속 시 브로드캐스트 부하 | 초기 스코프는 단일 서버로 충분. 확장 필요 시 Redis Adapter 검토(현재는 제외) |
 | 이벤트 발송 실패 | 로그 기록. 클라이언트는 재연결 시 REST 재조회로 상태 복구 |
 
@@ -200,7 +201,7 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 5. 드래그 중에는 card:moving 이벤트를 50–100ms 간격으로 스로틀링해 브로드캐스트만 하고 DB에는 저장하지 않는다. 드래그가 끝났을 때(card:move) 한 번만 board_items·board_events에 저장한다.
 6. 서버는 모든 변경 이벤트에 ack로 성공/실패를 응답하고, 실패 시 클라이언트는 Optimistic Update를 롤백한다.
 7. 사진 카드는 S3 비공개 버킷에 저장한다. 업로드·조회 모두 presigned URL을 사용하고, jpg/png/webp만 허용, 최대 10MB. 카드 삭제 시 S3 객체도 삭제한다.
-8. 구현 (2026-10-04, 백엔드): 소켓 이벤트 — 보낼 때 `board:join`(ack로 스냅샷), `card:add`(clientId로 임시 카드와 짝지음)·`card:move`·`card:update`·`card:delete`(모두 ack {ok} / 실패 시 {ok:false, error}), `card:moving`(ack 없음, 중계만) / 받을 때 `card:added`·`card:moved`·`card:updated`·`card:deleted`·`card:moving`, REST 변경 알림 `board:renamed`·`board:deleted`·`board:removed`·`board:members-changed`. 옮긴 카드는 맨 위(z_index 최대)로 올라온다. REST: `GET·POST /api/boards`, `GET·PATCH·DELETE /api/boards/:id`, 초대 `GET·POST /api/boards/:id/invite`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`, 멤버 `DELETE /api/boards/:id/members/:userId`
+8. 구현 (2026-10-04, 백엔드): 소켓 이벤트 — 보낼 때 `board:join`(ack로 스냅샷 — 서버는 멤버 확인 → room 참여 → 스냅샷 순서로 처리해 그 사이 변경을 놓치지 않음, C-11), `card:add`(clientId로 임시 카드와 짝지음)·`card:move`·`card:update`·`card:delete`(모두 ack {ok} / 실패 시 {ok:false, error}), `card:moving`(ack 없음, 중계만) / 받을 때 `card:added`·`card:moved`·`card:updated`·`card:deleted`·`card:moving`, REST 변경 알림 `board:renamed`·`board:deleted`·`board:removed`·`board:members-changed`. 옮긴 카드는 맨 위(z_index 최대)로 올라온다. REST: `GET·POST /api/boards`, `GET·PATCH·DELETE /api/boards/:id`, 초대 `GET·POST /api/boards/:id/invite`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`, 멤버 `DELETE /api/boards/:id/members/:userId`
 
 **출력**: 모든 참여자에게 동기화된 보드 카드 상태
 

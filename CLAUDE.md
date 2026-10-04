@@ -38,9 +38,9 @@
 - 뉴스 수집(F-01): `backend/src/news/` — providers(naver·guardian) → collector(예외 정책) → repository(저장·중복 제거) → `NewsEvents`의 `articles:new` 이벤트(F-02가 구독). `NEWS_COLLECTOR_ENABLED=false`로 자동 수집을 끌 수 있음
 - 외부 API 에러 메시지에 요청 URL·원본 에러를 그대로 넣지 말 것 (Guardian은 API 키가 URL 쿼리에 들어감)
 - DB 테스트는 `TEST_DATABASE_URL`(로컬: `moyobom_test`)에서만 실행되며, DB 이름이 `_test`로 끝나지 않으면 거부함. 새 마이그레이션을 만들면 `npm run migrate:test -- up`도 실행
-- 실시간 피드(F-02): `backend/src/realtime/newsFeed.ts`(Socket.io, room `news-feed`, 이벤트 `feed:new-articles` — 최대 50건 묶음, 넘치면 `truncated`), REST `GET /api/articles`(`backend/src/news/feed.ts`, 커서 "발행시각_id"). 프론트 `frontend/src/feed/` — 연결·재연결 시 REST로 최신 목록을 다시 받아 누락분을 채움. 카테고리 표시 이름은 백엔드 `types.ts`와 프론트 `feed/types.ts` 두 곳을 함께 수정
-- 인증(F-07): `backend/src/auth/` — scrypt 비밀번호, JWT(jose, HS256) access 15분 + refresh 14일(DB에는 SHA-256 해시, 1회용 회전), httpOnly 쿠키(`access_token` SameSite=Lax / `refresh_token` SameSite=Strict·Path=/api/auth). `requireAuth`로 보호(피드 포함), `checkOrigin`으로 CSRF 방지, 소켓은 `realtime/auth.ts`에서 쿠키·Origin 검증. 프론트 `api/client.ts`의 `apiFetch`가 401이면 한 번 갱신 후 재시도. 새 API는 기본적으로 `requireAuth` 뒤에 둘 것
-- 협업 보드(F-05·F-06·F-07 초대): `backend/src/boards/service.ts`(권한 확인·카드·초대·변경 기록, 멤버가 아니면 not_found로 존재 숨김), REST `routes/boards.ts`(`/api/boards`, `/api/invites`), 실시간 `realtime/boardSync.ts`(room `board:{id}`, 이벤트는 requirements.md F-05 처리 로직 8). REST로 바뀐 내용은 `BoardNotifier`로 소켓에 알림. 카드 변경은 항상 board_events 기록 + boards.updated_at 갱신
+- 실시간 피드(F-02): `backend/src/realtime/newsFeed.ts`(Socket.io, room `news-feed`, 이벤트 `feed:new-articles` — 최대 50건 묶음, 넘치면 `truncated`), REST `GET /api/articles`(`backend/src/news/feed.ts`, 커서 "발행시각_id" / 재연결 보완용 `collectedAfter` 커서 "수집시각 마이크로초_id"). 프론트 `frontend/src/feed/` — 처음엔 최신 페이지 + 수집 위치를 받고, 재연결·truncated 때는 끊기기 직전 수집 위치(1분 겹침) 뒤에 수집된 기사를 끝까지 받아 합침(`feed/catchUp.ts`, 500건 넘게 놓치면 목록을 새로 시작). 카테고리 표시 이름은 백엔드 `types.ts`와 프론트 `feed/types.ts` 두 곳을 함께 수정
+- 인증(F-07): `backend/src/auth/` — scrypt 비밀번호, JWT(jose, HS256) access 15분 + refresh 14일(DB에는 SHA-256 해시, 1회용 회전), httpOnly 쿠키(`access_token` SameSite=Lax / `refresh_token` SameSite=Strict·Path=/api/auth). `requireAuth`로 보호(피드 포함), `checkOrigin`으로 CSRF 방지, 소켓은 `realtime/auth.ts`에서 쿠키·Origin 검증. 프론트 `api/client.ts`의 `apiFetch`가 401이면 한 번 갱신 후 재시도(`/api/auth/me` 포함, refresh·login·signup·logout만 제외). 새 API는 기본적으로 `requireAuth` 뒤에 둘 것
+- 협업 보드(F-05·F-06·F-07 초대): `backend/src/boards/service.ts`(권한 확인·카드·초대·변경 기록, 멤버가 아니면 not_found로 존재 숨김), REST `routes/boards.ts`(`/api/boards`, `/api/invites`), 실시간 `realtime/boardSync.ts`(room `board:{id}`, 이벤트는 requirements.md F-05 처리 로직 8). `board:join`은 멤버 확인 → room 참여 → 스냅샷 순서(바꾸면 그 사이 변경을 놓침), 클라이언트는 join ack 전 이벤트를 모았다가 스냅샷과 맞춘다. REST로 바뀐 내용은 `BoardNotifier`로 소켓에 알림. 카드 변경은 항상 board_events 기록 + boards.updated_at 갱신
 - DB 테스트 공통 도우미 `src/test/fixtures.ts`(resetDb·createUser·createArticle). 새 테이블이 articles/users를 참조하면 TRUNCATE에 CASCADE 필요
 - 백엔드 테스트는 파일을 순차 실행(`vitest.config.ts` fileParallelism: false — DB 테스트끼리 같은 테이블을 TRUNCATE하기 때문)
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
@@ -53,10 +53,10 @@
 |---|---|
 | 4주 | 프로젝트 세팅(Express·React 뼈대, Docker Compose로 PostgreSQL+pgvector, **CI: GitHub Actions 린트·테스트**) + **F-01** 뉴스 수집 |
 | 5~6주 | **F-02** 실시간 피드 API → 피드 화면(캔버스 variant 없이 색상 팔레트만) → 🔴 **중간발표 2026-10-15**. 서버 시연 필요 시 EC2 배포 자동화(CD) |
-| 7~8주 | **F-07** 인증·초대(보드 WebSocket에 JWT 필요) → **F-05** 보드 백엔드 → 보드 화면 + **F-06** 보드 목록. ⚠️ 보드 화면 착수 전 캔버스 비주얼 variant(A 여유 / B 밀도 / C 질감)를 사용자에게 반드시 확인 |
+| 7~8주 | **F-07** 인증·초대(보드 WebSocket에 JWT 필요) → **F-05** 보드 백엔드 → 보드 화면 + **F-06** 보드 목록. 보드 캔버스는 **A(여유)** 로 확정 |
 | 9~10주 | **F-03** 링크 요약, 사진 카드(S3), **F-08** AI 클러스터링 |
 | 11주 | 통합 테스트, 엣지 케이스(API 실패·쿼터·SSRF·프롬프트 인젝션), Should 마무리(**F-04**, **F-11**) |
-| 12주 | 발표 준비, 문서화 → 🔴 최종발표 |
+| 12주 | 발표 준비, 문서화 → 🔴 **최종발표 2026-11-26** |
 
 **목표 범위: Must·Should·Could 전 기능 구현** (Could: F-09, F-10, F-12, F-13). **Could는 Must·Should를 모두 완수한 다음 착수**하고, 그 시점의 개발 속도를 보고 일정을 재조정한다. 전체 완성 후 일부 수정 및 추가 기능 진행 예정.
 
@@ -78,10 +78,11 @@
 - 2026-09-30: 요약 AI를 OpenAI API로 확정 (기존 사용 중인 API로 키·결제 통일). 외부 AI 호출은 `AiService`로 추상화. F-03 요약 프롬프트의 프롬프트 인젝션 대비는 추후 진행
 - 2026-10-04: 한 사람이 가입 방식별로 여러 계정을 만들 수 있는 문제 대응 확정 — **A. 로그인 화면에 "최근 로그인 방식" 표시**(브라우저 localStorage, 네이버 로그인 붙일 때 구현) / **B. 비용 드는 AI 기능(F-03 등)은 계정 + IP + 서비스 전체 일일 한도로 제한**(F-03 구현 시 필수). C. 계정 연결 기능은 후보(전 기능 완료 후 검토). 휴대폰 본인인증은 하지 않음
 - 2026-09-30: 개발 순서 확정(위 "개발 우선순위" 표). 중간발표 2026-10-15. 목표는 전 기능(Must·Should·Could) 구현
+- 2026-10-04: 최종발표 **2026-11-26** 확정. 보드 캔버스 비주얼 **A(여유)** 로 진행. F-ID가 없는 디자인 목업 요소는 개발 범위에 자동 포함하지 않음. API 명세서는 개발 완료 후 실제 코드 기준으로 갱신
 
 ## 미결정 사항 (작업 전 사용자에게 확인)
 
-- 보드 캔버스 비주얼 variant(A 여유 / B 밀도 / C 질감)
+- 주차별 실제 날짜(캘린더), 중간발표 시연 방식(로컬 / EC2 배포)
 
 ## 진행 상황
 
@@ -93,6 +94,7 @@
 - 2026-10-02: F-07 1단계 — users·refresh_tokens 테이블(+articles.submitted_by FK), 이메일 가입·로그인·토큰 갱신·로그아웃·내 정보 API, 로그인 실패 제한, CSRF(Origin) 확인, 소켓 연결 인증, 피드 로그인 필수화, 프론트 로그인·회원가입 화면·로그인 보호 라우팅. 테스트 백엔드 101·프론트 13. 남은 것: 네이버 소셜 로그인, 초대 링크는 F-05와 함께.
 - 2026-10-04: 카카오 로그인 구현·실계정 확인 완료(`backend/src/auth/kakao.ts`, `routes/oauth.ts` — state 쿠키로 CSRF 방지, 첫 로그인 시 가입·이후 로그인, 닉네임은 첫 가입 때만 저장). 리다이렉트 URI `{APP_ORIGIN}/api/auth/kakao/callback`, 동의항목은 닉네임만. 다음: 네이버 로그인(개발자센터 '네이버 로그인' 키 필요) 또는 F-05. 로컬 데모 계정 demo@moyobom.dev / demo-pass-1234 (개발 DB 전용)
 - 2026-10-04: F-05 백엔드 — boards·board_members·board_invites·board_items·board_events 테이블, 보드 CRUD·목록(F-06), 초대 링크·멤버 관리(F-07), 소켓 실시간 카드 동기화(추가·이동·수정·삭제, 드래그 중계, ack 롤백, 재접속 스냅샷), 미사용 기사 30일 정리(F-01). 테스트 백엔드 152. 남은 것: **보드 화면(캔버스 variant 확정 필요)**, 사진 카드(S3, 9~10주차), 네이버 로그인
+- 2026-10-04: Codex 검토 지적 수정 — C-09 `/api/auth/me`도 토큰 갱신 후 재요청(access 만료 후 새로고침해도 로그인 유지), C-10 재연결 누락분을 수집 순서 커서(`collectedAfter`)로 끝까지 보완(발행이 오래됐지만 늦게 수집된 기사 포함, 인덱스 마이그레이션 추가), C-11 `board:join` 순서 변경 + 경쟁 상태 재현 테스트. 테스트 백엔드 159·프론트 22. 남은 것: 보드 화면(A 여유)·F-06 목록 화면·초대 페이지와 로그인 후 복귀(C-12), 보드 클라이언트의 join 전 이벤트 버퍼링
 
 ## 코딩 컨벤션
 
