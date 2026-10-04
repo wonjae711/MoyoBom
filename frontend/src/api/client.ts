@@ -56,6 +56,21 @@ export function refreshSession(): Promise<boolean> {
   return refreshing
 }
 
+/**
+ * 로그아웃 (L-04). 서버가 refresh token을 지우고 쿠키를 비워야 끝난 것이다 — 실패하면 던져서 화면이 로그인 상태를 유지하게 한다.
+ * 진행 중인 갱신과 같은 줄(탭 사이 포함)에 서므로, 갱신이 로그아웃 뒤에 새 쿠키를 다시 심는 일이 없다.
+ */
+export async function logoutSession(): Promise<void> {
+  if (refreshing) await refreshing
+  let res: Response
+  try {
+    res = await acrossTabs(() => fetch('/api/auth/logout', { method: 'POST' }))
+  } catch {
+    throw new ApiError(0, '네트워크 오류로 로그아웃하지 못했습니다. 다시 시도해 주세요')
+  }
+  if (!res.ok) throw new ApiError(res.status, '로그아웃하지 못했습니다. 다시 시도해 주세요')
+}
+
 async function toApiError(res: Response): Promise<ApiError> {
   const body = (await res.json().catch(() => ({}))) as { error?: string; fields?: string[] }
   return new ApiError(res.status, body.error ?? `요청 실패 (HTTP ${res.status})`, body.fields)

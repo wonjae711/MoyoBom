@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, UnauthorizedError, apiFetch, onUnauthorized } from './client'
+import { ApiError, UnauthorizedError, apiFetch, logoutSession, onUnauthorized } from './client'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -108,5 +108,22 @@ describe('apiFetch', () => {
     const error = (await apiFetch('/api/auth/signup', { method: 'POST', body: '{}' }).catch((e: unknown) => e)) as ApiError
     expect(error.status).toBe(400)
     expect(error.fields).toEqual(['email'])
+  })
+})
+
+describe('[L-04] logoutSession', () => {
+  it('서버가 로그아웃을 끝내면(204) 성공한다', async () => {
+    mockFetch(() => new Response(null, { status: 204 }))
+    await expect(logoutSession()).resolves.toBeUndefined()
+  })
+
+  it('서버 오류(500)면 실패로 알려 화면이 로그인 상태를 유지하게 한다', async () => {
+    mockFetch(() => json({ error: '서버 오류' }, 500))
+    await expect(logoutSession()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('네트워크 오류(오프라인)도 실패로 알린다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))))
+    await expect(logoutSession()).rejects.toMatchObject({ status: 0 })
   })
 })

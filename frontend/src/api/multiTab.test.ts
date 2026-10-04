@@ -11,6 +11,12 @@ function fakeBrowser({ withLocks }: { withLocks: boolean }) {
   const valid = new Set(['r1'])
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/logout') {
+      // 로그아웃: 요청에 실린 refresh token을 지우고 쿠키를 비운다
+      if (jar.refresh) valid.delete(jar.refresh)
+      jar.refresh = null
+      return new Response(null, { status: 204 })
+    }
     if (String(input) !== '/api/auth/refresh') return new Response('{}', { status: 200 })
     const sent = jar.refresh // 요청을 보내는 순간의 쿠키
     if (sent && valid.delete(sent)) {
@@ -37,7 +43,7 @@ function fakeBrowser({ withLocks }: { withLocks: boolean }) {
 
   vi.stubGlobal('fetch', fetchMock)
   vi.stubGlobal('navigator', withLocks ? { locks } : {})
-  return { jar, fetchMock }
+  return { jar, valid, fetchMock }
 }
 
 async function openTab() {
@@ -65,6 +71,18 @@ describe('[L-01] 여러 탭의 동시 토큰 갱신', () => {
     expect(results).toEqual([true, true])
     expect(jar.refresh).toBe('r3')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('[L-04] 다른 탭이 갱신 중일 때 누른 로그아웃은 갱신이 끝난 뒤 보내져, 새로 받은 토큰까지 지운다', async () => {
+    const { jar, valid, fetchMock } = fakeBrowser({ withLocks: true })
+    const [tabA, tabB] = [await openTab(), await openTab()]
+    const refreshing = tabA.refreshSession()
+    await tabB.logoutSession()
+    await refreshing
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toEqual(['/api/auth/refresh', '/api/auth/logout'])
+    // 로그아웃 요청에는 갱신으로 바뀐 새 토큰이 실려 서버에서 지워지고, 쿠키도 비워진다
+    expect(valid.size).toBe(0)
+    expect(jar.refresh).toBeNull()
   })
 
   it('한 탭 안의 동시 갱신은 여전히 한 번만 보낸다', async () => {

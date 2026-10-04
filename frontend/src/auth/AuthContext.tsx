@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { UnauthorizedError, apiFetch, onUnauthorized } from '../api/client'
+import { UnauthorizedError, apiFetch, logoutSession, onUnauthorized } from '../api/client'
 import { AuthContext, type User } from './useAuth'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -34,8 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(user)
   }, [])
 
+  // 서버에서 로그아웃이 끝난 뒤에만 화면을 로그아웃 상태로 바꾼다. 실패하면 에러를 던진다 (L-04)
   const logout = useCallback(async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    await logoutSession()
     setUser(null)
   }, [])
 

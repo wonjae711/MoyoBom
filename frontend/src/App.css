@@ -36,3 +36,16 @@
 .app-header__user button:hover {
   border-color: var(--color-black);
 }
+
+.app-header__error {
+  padding: 4px 8px;
+  border-left: 3px solid var(--color-black);
+  background: var(--color-off-white);
+  color: var(--color-black);
+  font-size: 0.85rem;
+}
+
+.app-header__user button:disabled {
+  color: var(--color-gray-mid);
+  cursor: default;
+}
