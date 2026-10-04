@@ -28,7 +28,7 @@ describe.skipIf(!testDatabaseUrl)('인증 API (DB)', () => {
     limiter = new LoginRateLimiter(3, 60_000);
     app = createApp({
       checkDb: async () => true,
-      articles: { listFeed: async () => ({ articles: [], nextCursor: null }) },
+      articles: { listFeed: async () => ({ articles: [], nextCursor: null, collectedCursor: null }) },
       auth: {
         auth: new AuthService({ pool, jwtSecret: TEST_JWT_SECRET }),
         loginLimiter: limiter,

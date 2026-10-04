@@ -1,10 +1,10 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestPool, testDatabaseUrl } from '../test/db.js';
-import { compareFeed, decodeCursor, encodeCursor, listFeed, type FeedArticle } from './feed.js';
+import { compareFeed, decodeCollectedCursor, decodeCursor, encodeCursor, listFeed, type FeedArticle } from './feed.js';
 
 function feedArticle(id: string, publishedAt: string): FeedArticle {
-  return { id, title: id, description: '', source: 's', category: 'economy', originalLink: `https://e.com/${id}`, publishedAt };
+  return { id, title: id, description: '', source: 's', category: 'economy', originalLink: `https://e.com/${id}`, publishedAt, collectedAt: publishedAt };
 }
 
 describe('피드 커서·정렬', () => {
@@ -79,6 +79,58 @@ describe.skipIf(!testDatabaseUrl)('listFeed (DB)', () => {
     await insert('sport', '2026-10-01T11:00:00Z', { category: 'sports' });
     const page = await listFeed(pool, { limit: 10, category: 'sports' });
     expect(page.articles.map((a) => a.title)).toEqual(['sport']);
+  });
+
+  /** 수집 시각을 지정해 넣는다 (created_at 기본값 now()는 한 트랜잭션 안에서 모두 같다) */
+  async function insertCollected(link: string, publishedAt: string, createdAt: string) {
+    await pool.query(
+      `INSERT INTO articles (title, source, category, original_link, source_type, published_at, created_at)
+       VALUES ($1, 's', 'economy', $2, 'api_collected', $3, $4)`,
+      [link, `https://e.com/${link}`, publishedAt, createdAt],
+    );
+  }
+
+  async function catchUp(from: string, limit: number) {
+    const titles: string[] = [];
+    let cursor: string | null = from;
+    for (let i = 0; cursor && i < 20; i++) {
+      const page = await listFeed(pool, { limit, collectedAfter: decodeCollectedCursor(cursor)! });
+      titles.push(...page.articles.map((a) => a.title));
+      if (!page.nextCursor) return { titles, last: page.collectedCursor, pages: i + 1 };
+      cursor = page.nextCursor;
+    }
+    throw new Error('끝나지 않음');
+  }
+
+  it('[C-10] 처음 조회 때 받은 수집 위치 뒤에 수집된 기사를, 발행 시각이 오래됐어도 빠짐없이 준다', async () => {
+    await insertCollected('seen', '2026-10-01T10:00:00Z', '2026-10-01T10:01:00Z');
+    const first = await listFeed(pool, { limit: 30 });
+    expect(first.collectedCursor).toMatch(/^\d+_\d+$/);
+
+    // 끊긴 동안: 새 기사 40개 + 발행은 오래됐지만 늦게 수집된 기사 1개
+    for (let i = 0; i < 40; i++) {
+      await insertCollected(`new-${i}`, '2026-10-01T11:00:00Z', `2026-10-01T11:00:${String(i).padStart(2, '0')}.5Z`);
+    }
+    await insertCollected('late', '2026-09-30T08:00:00Z', '2026-10-01T11:01:00Z');
+
+    const { titles, last } = await catchUp(first.collectedCursor!, 15);
+    expect(titles).toHaveLength(41);
+    expect(titles).toContain('late');
+    expect(titles).not.toContain('seen');
+    // 다 받은 뒤 위치에서 다시 물으면 아무것도 없다
+    expect((await listFeed(pool, { limit: 15, collectedAfter: decodeCollectedCursor(last!)! })).articles).toEqual([]);
+  });
+
+  it('[C-10] 한 번에 저장돼 수집 시각이 마이크로초까지 같은 기사가 페이지보다 많아도 반복 없이 끝난다', async () => {
+    await pool.query(
+      `INSERT INTO articles (title, source, category, original_link, source_type, published_at)
+       SELECT 'batch-' || g, 's', 'economy', 'https://e.com/batch-' || g, 'api_collected', '2026-10-01T11:00:00Z'
+       FROM generate_series(1, 25) g`,
+    );
+    const { titles, pages } = await catchUp('0_0', 10);
+    expect(new Set(titles).size).toBe(25);
+    expect(titles).toHaveLength(25);
+    expect(pages).toBe(3);
   });
 
   it('사용자가 링크로 추가한 기사(user_submitted)는 피드에 넣지 않는다', async () => {

@@ -23,7 +23,7 @@ describe.skipIf(!testDatabaseUrl)('보드 API (DB)', () => {
     calls = recorder.calls;
     app = createApp({
       checkDb: async () => true,
-      articles: { listFeed: async () => ({ articles: [], nextCursor: null }) },
+      articles: { listFeed: async () => ({ articles: [], nextCursor: null, collectedCursor: null }) },
       auth: fakeAuthDeps(),
       oauth: fakeOAuthDeps(),
       boards: { boards: new BoardService(pool), notifier: recorder.notifier },

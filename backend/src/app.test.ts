@@ -4,7 +4,7 @@ import { createApp, type AppDeps } from './app.js';
 import type { FeedPage } from './news/feed.js';
 import { TEST_APP_ORIGIN, authCookie, fakeAuthDeps, fakeBoardDeps, fakeOAuthDeps } from './test/auth.js';
 
-const emptyPage: FeedPage = { articles: [], nextCursor: null };
+const emptyPage: FeedPage = { articles: [], nextCursor: null, collectedCursor: null };
 
 function makeApp(overrides: Partial<AppDeps> = {}) {
   const listFeed = vi.fn(async () => emptyPage);
@@ -63,11 +63,19 @@ describe('GET /api/articles', () => {
     });
   });
 
+  it('[C-10] collectedAfter 커서(수집 시각 마이크로초_id)를 해석해 넘긴다', async () => {
+    const { app, listFeed } = makeApp();
+    await request(app).get('/api/articles?limit=100&collectedAfter=1790000000123456_42').set('Cookie', await authCookie());
+    expect(listFeed).toHaveBeenCalledWith({ limit: 100, collectedAfter: { micros: '1790000000123456', id: '42' } });
+  });
+
   it.each([
     ['limit=0', 'limit'],
     ['limit=101', 'limit'],
     ['category=weather', 'category'],
     ['before=not-a-cursor', 'before'],
+    ['collectedAfter=2026-10-01_1', 'collectedAfter'],
+    ['collectedAfter=1_1&before=2026-10-01T12:00:00.000Z_42', 'collectedAfter'],
   ])('잘못된 파라미터(%s)는 400', async (query, field) => {
     const { app, listFeed } = makeApp();
     const res = await request(app).get(`/api/articles?${query}`).set('Cookie', await authCookie());

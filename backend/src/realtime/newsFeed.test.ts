@@ -75,6 +75,7 @@ describe('실시간 뉴스 피드 (Socket.io)', () => {
       category: 'economy',
       originalLink: 'https://e.com/2',
       publishedAt: '2026-10-01T12:30:00.000Z',
+      collectedAt: expect.any(String),
     });
   });
 

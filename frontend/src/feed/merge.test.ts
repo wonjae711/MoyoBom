@@ -11,6 +11,7 @@ function article(id: string, publishedAt: string, title = id): FeedArticle {
     category: 'economy',
     originalLink: `https://e.com/${id}`,
     publishedAt,
+    collectedAt: publishedAt,
   }
 }
 

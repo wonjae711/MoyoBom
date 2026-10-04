@@ -30,11 +30,15 @@ export interface FeedArticle {
   category: CategoryCode
   originalLink: string
   publishedAt: string
+  /** 수집된 시각 — 재연결 시 누락분 보완 기준 (C-10) */
+  collectedAt: string
 }
 
 export interface FeedPage {
   articles: FeedArticle[]
   nextCursor: string | null
+  /** 여기까지 수집된 기사는 받은 셈이라는 위치 (collectedAfter 조회의 시작점) */
+  collectedCursor: string | null
 }
 
 export interface NewArticlesPayload {
