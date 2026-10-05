@@ -97,7 +97,8 @@ export type NewItemInput =
  * 모든 작업은 먼저 멤버인지 확인한다. 멤버가 아니면 보드가 있어도 not_found로 답해 존재 여부를 숨긴다.
  * 카드 변경은 board_items(현재 상태)와 board_events(변경 기록)에 함께 저장한다.
  *
- * 변경 순서 (L-02·L-05): 보드를 바꾸는 트랜잭션은 맨 먼저 bump()로 boards.seq를 올린다. 이 행 잠금을 커밋까지 쥐므로
+ * 변경 순서 (L-02·L-05): 보드를 바꾸는 트랜잭션은 맨 먼저 bump()로 boards.seq를 올리고, 그 뒤에 권한을 확인한다(L-06 —
+ * 내보내기와 동시에 들어온 변경이 내보내기 커밋 전의 멤버 정보로 통과하지 않도록). 이 행 잠금을 커밋까지 쥐므로
  * 같은 보드의 변경은 한 줄로 서고, seq 순서가 곧 커밋 순서다. 카드의 version = 마지막으로 바뀐 때의 seq이며,
  * 클라이언트는 이 값으로 늦게 도착한 이벤트·스냅샷과 겹친 이벤트를 걸러낸다. z_index(최대+1)도 잠금 뒤에 계산해 겹치지 않는다.
  */
@@ -352,8 +353,9 @@ export class BoardService {
     options: { allowSubmitted?: boolean } = {},
   ): Promise<BoardItem> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       if (input.type === 'article') {
         const { rows } = await client.query<{ source_type: string; on_board: boolean }>(
           `SELECT a.source_type,
@@ -398,8 +400,9 @@ export class BoardService {
     to: { x: number; y: number; rotation?: number },
   ): Promise<BoardItem> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       const { rowCount } = await client.query(
         `UPDATE board_items SET position_x = $3, position_y = $4, rotation = coalesce($5, rotation),
            z_index = (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1),
@@ -415,8 +418,9 @@ export class BoardService {
 
   async updateMemo(boardId: string, userId: string, itemId: string, content: string): Promise<BoardItem> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       const { rowCount } = await client.query(
         `UPDATE board_items SET content = $3, updated_at = now(), version = $4
          WHERE board_id = $1 AND id = $2 AND item_type = 'memo'`,
@@ -431,8 +435,9 @@ export class BoardService {
   /** 삭제도 순번을 받는다. 클라이언트는 이 순번 이하의 늦은 이벤트로 카드를 되살리지 않는다 */
   async deleteItem(boardId: string, userId: string, itemId: string): Promise<{ version: number }> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       const { rowCount } = await client.query('DELETE FROM board_items WHERE board_id = $1 AND id = $2', [
         boardId,
         itemId,
@@ -464,8 +469,9 @@ export class BoardService {
     clusters: NewCluster[],
   ): Promise<{ seq: number; clusters: BoardCluster[] }> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       await client.query('DELETE FROM clusters WHERE board_id = $1', [boardId]);
       for (const cluster of clusters) {
         const { rows } = await client.query<{ id: string }>(
@@ -487,8 +493,9 @@ export class BoardService {
   /** "제안 무시": 클러스터만 지우고 카드는 그대로 둔다 */
   async dismissCluster(boardId: string, userId: string, clusterId: string): Promise<{ seq: number; clusters: BoardCluster[] }> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       const { rowCount } = await client.query('DELETE FROM clusters WHERE board_id = $1 AND id = $2', [boardId, clusterId]);
       if (!rowCount) throw new BoardError('not_found', '이미 사라진 클러스터입니다');
       await this.log(client, boardId, userId, 'cluster:dismiss', { clusterId });
@@ -502,8 +509,9 @@ export class BoardService {
    */
   async arrangeCluster(boardId: string, userId: string, clusterId: string): Promise<BoardItem[]> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       const cluster = await this.clusterOf(client, boardId, clusterId);
       const { rows } = await client.query<{ id: string }>(
         `SELECT bi.id FROM cluster_items ci JOIN board_items bi ON bi.id = ci.board_item_id
@@ -533,8 +541,9 @@ export class BoardService {
    */
   async restoreCluster(boardId: string, userId: string, clusterId: string): Promise<BoardItem[]> {
     return this.tx(async (client) => {
-      await this.requireRole(boardId, userId, 'member', client);
+      // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
       await this.clusterOf(client, boardId, clusterId);
       const { rows } = await client.query<{ id: string }>(
         `UPDATE board_items bi SET

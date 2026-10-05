@@ -89,7 +89,7 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
 
     // 순서가 중요하다 (C-11): 멤버 확인 → room 참여 → 스냅샷.
     // 스냅샷을 먼저 뜨면 스냅샷과 room 참여 사이에 생긴 변경을 놓친다. room에 먼저 들어가면 그 사이 변경은
-    // 이벤트로 오고(스냅샷에도 들어 있을 수 있음), 클라이언트는 join ack 전 이벤트를 모았다가 updatedAt으로 맞춘다.
+    // 이벤트로 오고(스냅샷에도 들어 있을 수 있음), 클라이언트는 join ack 전 이벤트를 모았다가 카드 version(보드 변경 순번)으로 맞춘다(스냅샷 seq 이하는 버림 — frontend/src/board/boardState.ts).
     on('board:join', async ({ boardId }) => {
       if (!(await boards.getRole(boardId, userId))) throw new BoardError('not_found', '보드를 찾을 수 없습니다');
       await socket.join(boardRoom(boardId));

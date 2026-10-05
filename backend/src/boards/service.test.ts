@@ -222,6 +222,53 @@ describe.skipIf(!testDatabaseUrl)('BoardService (DB)', () => {
     });
   });
 
+  describe('[L-06] 내보내기와 동시에 들어온 카드 변경', () => {
+    /**
+     * 주인이 편집자를 내보내는 트랜잭션이 보드 잠금을 잡고 멤버를 지운 뒤 아직 커밋하지 않은 순간에,
+     * 그 편집자의 카드 변경이 들어오는 상황을 그대로 만든다.
+     */
+    async function whileRemoving(boardId: string, change: () => Promise<unknown>) {
+      const removal = await pool.connect();
+      try {
+        await removal.query('BEGIN');
+        await removal.query('UPDATE boards SET seq = seq + 1 WHERE id = $1', [boardId]);
+        await removal.query('DELETE FROM board_members WHERE board_id = $1 AND user_id = $2', [boardId, editor]);
+        const pending = change().then(
+          () => 'saved',
+          (e: unknown) => (e instanceof BoardError ? e.code : 'error'),
+        );
+        await new Promise((r) => setTimeout(r, 100)); // 편집자 요청이 보드 잠금을 기다리는 중
+        await removal.query('COMMIT');
+        return await pending;
+      } finally {
+        removal.release();
+      }
+    }
+
+    it('내보내진 뒤에 저장되려던 추가·이동·메모 수정·삭제는 모두 거절되고 아무것도 바뀌지 않는다', async () => {
+      const results: Record<string, string> = {};
+      for (const action of ['add', 'move', 'update', 'delete'] as const) {
+        await resetDb(pool);
+        owner = await createUser(pool, '주인');
+        editor = await createUser(pool, '편집자');
+        const boardId = await boardWithEditor();
+        const memo = await boards.addItem(boardId, owner, { type: 'memo', content: '원래', x: 0, y: 0 });
+        results[action] = await whileRemoving(boardId, () =>
+          action === 'add'
+            ? boards.addItem(boardId, editor, { type: 'memo', content: '몰래', x: 1, y: 1 })
+            : action === 'move'
+              ? boards.moveItem(boardId, editor, memo.id, { x: 99, y: 99 })
+              : action === 'update'
+                ? boards.updateMemo(boardId, editor, memo.id, '몰래 수정')
+                : boards.deleteItem(boardId, editor, memo.id),
+        );
+        const { items } = await boards.getSnapshot(boardId, owner);
+        expect(items).toEqual([expect.objectContaining({ id: memo.id, content: '원래', x: 0, y: 0 })]);
+      }
+      expect(results).toEqual({ add: 'not_found', move: 'not_found', update: 'not_found', delete: 'not_found' });
+    });
+  });
+
   describe('변경 순번 (L-02·L-05)', () => {
     async function memo(boardId: string, content: string) {
       return boards.addItem(boardId, owner, { type: 'memo', content, x: 0, y: 0 });
