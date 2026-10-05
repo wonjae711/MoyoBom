@@ -4,6 +4,7 @@ import { ApiError } from '../api/client'
 import type { FeedArticle } from '../feed/types'
 import { useNow, useToast } from '../ui/hooks'
 import { clusterQuota, getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
+import { AskPanel } from './AskPanel'
 import { BoardCanvas, type ClusterAction } from './BoardCanvas'
 import { BoardMenu, MembersButton } from './BoardManage'
 import { MEMO, MEMO_FONT, clearMeasureCache, fitView, toBoard, zoomAtCenter, type View } from './cardLayout'
@@ -40,6 +41,7 @@ export function BoardPage() {
   const [linkRemaining, setLinkRemaining] = useState<number | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [clusterRemaining, setClusterRemaining] = useState<number | null>(null)
+  const [askOpen, setAskOpen] = useState(false)
 
   useEffect(() => {
     clusterQuota(boardId)
@@ -122,6 +124,19 @@ export function BoardPage() {
       linkQuota(boardId).then(setLinkRemaining).catch(() => {})
       throw error
     }
+  }
+
+  /** 질의응답 출처 → 그 카드를 선택하고 지금 배율 그대로 화면 가운데로 (F-12) */
+  const showCard = (itemId: string) => {
+    const item = board.items.find((i) => i.id === itemId)
+    if (!item) return false
+    setConnectMode(false)
+    setConnectFrom(null)
+    setSelectedConnectionId(null)
+    setSelectedId(item.id)
+    setZoomMode('custom')
+    setView((v) => ({ ...v, x: canvasSize.width / 2 - item.x * v.scale, y: canvasSize.height / 2 - item.y * v.scale }))
+    return true
   }
 
   /** AI 이슈 묶기 (F-08) */
@@ -332,6 +347,9 @@ export function BoardPage() {
             >
               {analyzing ? 'AI 분석 중…' : 'AI 이슈 묶기'}
             </button>
+            <button type="button" className={askOpen ? 'is-on' : ''} onClick={() => setAskOpen((v) => !v)} aria-pressed={askOpen}>
+              질문하기
+            </button>
           </div>
           <div className="board-toolbar board-toolbar--right">
             {(['fit', 0.8, 1] as const).map((mode) => (
@@ -341,6 +359,13 @@ export function BoardPage() {
             ))}
           </div>
           <DiversityPanel items={board.items} />
+          <AskPanel
+            boardId={boardId}
+            open={askOpen}
+            onClose={() => setAskOpen(false)}
+            onShowCard={showCard}
+            hasArticles={articleCount > 0}
+          />
           <div className="board-hint">
             {connectMode
               ? connectFrom

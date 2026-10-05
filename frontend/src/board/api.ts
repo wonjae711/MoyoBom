@@ -108,4 +108,33 @@ export function moveCluster(boardId: string, clusterId: string, action: 'arrange
   )
 }
 
+/** 보드 질의응답 (F-12): 답변 근거가 된 보드의 기사 카드 */
+export interface AskSource {
+  n: number
+  itemId: string
+  articleId: string
+  title: string
+  source: string
+  originalLink: string
+  similarity: number
+}
+
+export interface AskResult {
+  /** 관련 기사를 찾지 못했으면 false (안내 문구만) */
+  found: boolean
+  answer: string
+  sources: AskSource[]
+  /** 답변에 실제로 쓴 출처 번호 */
+  citations: number[]
+  remaining: number
+}
+
+export function askBoard(boardId: string, question: string): Promise<AskResult> {
+  return apiFetch<AskResult>(`/api/boards/${boardId}/ask`, { method: 'POST', body: JSON.stringify({ question }) })
+}
+
+export function askQuota(boardId: string): Promise<number> {
+  return apiFetch<{ remaining: number }>(`/api/boards/${boardId}/ask/quota`).then((r) => r.remaining)
+}
+
 export const inviteUrl = (token: string) => `${window.location.origin}/invite/${token}`

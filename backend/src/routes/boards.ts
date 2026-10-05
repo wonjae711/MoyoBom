@@ -7,6 +7,8 @@ import { QuotaError, UnreadableError, type LinkService } from '../links/service.
 import { SummaryError } from '../ai/summarizer.js';
 import { EmbeddingError } from '../ai/embedder.js';
 import { ClusterBusyError, type ClusterService } from '../clusters/service.js';
+import { AnswerError } from '../ai/answerer.js';
+import type { QaService } from '../qa/service.js';
 import type { BoardNotifier } from '../realtime/boardSync.js';
 
 const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요').max(50) });
@@ -21,9 +23,12 @@ export interface BoardRouteDeps {
   links?: LinkService;
   /** AI 클러스터링(F-08). 없으면 해당 API는 503 */
   clusters?: ClusterService;
+  /** 보드 질의응답(F-12). 없으면 해당 API는 503 */
+  qa?: QaService;
 }
 
 const coord = z.number().finite().min(-1_000_000).max(1_000_000);
+const askSchema = z.object({ question: z.string().trim().min(2, '질문을 2자 이상 입력해 주세요').max(300, '질문은 300자 이내로 입력해 주세요') });
 const linkSchema = z.object({ url: z.string().trim().min(1).max(2000), x: coord.default(0), y: coord.default(0) });
 
 const LINK_STATUS: Record<LinkErrorCode, number> = {
@@ -47,7 +52,7 @@ function badTitle(res: Response, error: z.ZodError): void {
 }
 
 /** /api/boards — 보드 목록·생성·조회·수정·삭제(F-05·F-06), 초대 링크·멤버 관리(F-07). 모두 로그인 필요 */
-export function createBoardsRouter({ boards, notifier, links, clusters }: BoardRouteDeps): Router {
+export function createBoardsRouter({ boards, notifier, links, clusters, qa }: BoardRouteDeps): Router {
   const router = Router();
 
   router.param('boardId', (_req, res, next, value: string) => {
@@ -157,6 +162,33 @@ export function createBoardsRouter({ boards, notifier, links, clusters }: BoardR
       if (error instanceof EmbeddingError) {
         console.error('[clusters] 임베딩 실패:', error.message);
         return void res.status(502).json({ error: 'AI 분석에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'ai_failed' });
+      }
+      sendError(res, error);
+    }
+  });
+
+  // ---------- 보드 질의응답 (F-12) — 보드 멤버 누구나, 답변은 묻는 사람에게만 ----------
+
+  router.get('/:boardId/ask/quota', async (_req, res) => {
+    if (!qa) return void res.status(503).json({ error: '질의응답을 사용할 수 없습니다' });
+    res.json({ remaining: await qa.remaining(res.locals.userId!) });
+  });
+
+  /** 보드에 모은 기사만 근거로 질문에 답하고 출처(보드 카드)를 함께 돌려준다 */
+  router.post('/:boardId/ask', async (req, res) => {
+    if (!qa) return void res.status(503).json({ error: '질의응답을 사용할 수 없습니다' });
+    const parsed = askSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '질문을 입력해 주세요', fields: ['question'] });
+      return;
+    }
+    try {
+      res.json(await qa.ask(req.params.boardId, res.locals.userId!, req.ip ?? 'unknown', parsed.data.question));
+    } catch (error) {
+      if (error instanceof QuotaError) return void res.status(429).json({ error: error.message, code: 'quota', scope: error.scope });
+      if (error instanceof EmbeddingError || error instanceof AnswerError) {
+        console.error('[qa] AI 호출 실패:', error.message);
+        return void res.status(502).json({ error: 'AI 답변에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'ai_failed' });
       }
       sendError(res, error);
     }

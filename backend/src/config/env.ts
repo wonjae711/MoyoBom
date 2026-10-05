@@ -46,6 +46,11 @@ const envSchema = z.object({
   AI_CLUSTER_LIMIT_USER: z.coerce.number().int().min(0).default(10),
   AI_CLUSTER_LIMIT_IP: z.coerce.number().int().min(0).default(30),
   AI_CLUSTER_LIMIT_TOTAL: z.coerce.number().int().min(0).default(200),
+  /** 보드 질의응답 (F-12): 근거로 쓸 최소 유사도(실제 기사로 조정: 관련 0.25~0.59, 무관 ~0.23), 하루 질문 한도 */
+  QA_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.25),
+  AI_QA_LIMIT_USER: z.coerce.number().int().min(0).default(30),
+  AI_QA_LIMIT_IP: z.coerce.number().int().min(0).default(60),
+  AI_QA_LIMIT_TOTAL: z.coerce.number().int().min(0).default(300),
 });
 
 export type Env = z.infer<typeof envSchema>;

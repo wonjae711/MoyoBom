@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { Embedder } from '../ai/embedder.js';
 import { EmbeddingError } from '../ai/embedder.js';
+import { ensureArticleEmbeddings, loadBoardArticles, type BoardArticle } from '../ai/articleEmbeddings.js';
 import type { AiQuota } from '../ai/quota.js';
 import { SummaryError, type ClusterSummarizer } from '../ai/summarizer.js';
 import type { BoardService, NewCluster } from '../boards/service.js';
@@ -33,16 +34,6 @@ export interface ClusterRunResult {
   remaining: number;
 }
 
-interface ArticleCard {
-  itemId: string;
-  articleId: string;
-  title: string;
-  description: string;
-  x: number;
-  y: number;
-  embedding: number[] | null;
-}
-
 export interface ClusterServiceDeps {
   pool: pg.Pool;
   boards: BoardService;
@@ -73,13 +64,13 @@ export class ClusterService {
     if (this.running.has(boardId)) throw new ClusterBusyError();
     this.running.add(boardId);
     try {
-      const cards = await this.loadArticleCards(boardId);
+      const cards = await loadBoardArticles(this.deps.pool, boardId, MAX_CLUSTER_ARTICLES);
       if (cards.length < 2) throw new BoardError('invalid', '기사 카드가 2개 이상 있어야 분석할 수 있습니다');
 
       const quota = await this.deps.quota.consume(CLUSTER_FEATURE, userId, ip);
       if (!quota.ok) throw new QuotaError(quota.scope, quota.limit);
       try {
-        const embedded = await this.ensureEmbeddings(cards);
+        const embedded = await ensureArticleEmbeddings(this.deps.pool, this.deps.embedder, cards);
         const groups = averageLinkage(
           embedded.map((c) => c.embedding!),
           this.deps.threshold,
@@ -105,73 +96,8 @@ export class ClusterService {
     }
   }
 
-  private async loadArticleCards(boardId: string): Promise<ArticleCard[]> {
-    const { rows } = await this.deps.pool.query<{
-      item_id: string;
-      article_id: string;
-      title: string;
-      description: string;
-      x: number;
-      y: number;
-      embedding: string | null;
-    }>(
-      `SELECT bi.id AS item_id, a.id AS article_id, a.title, a.description, bi.position_x AS x, bi.position_y AS y,
-         a.embedding::text AS embedding
-       FROM board_items bi JOIN articles a ON a.id = bi.article_id
-       WHERE bi.board_id = $1 AND bi.item_type = 'article'
-       ORDER BY bi.id DESC LIMIT $2`,
-      [boardId, MAX_CLUSTER_ARTICLES],
-    );
-    return rows.reverse().map((r) => ({
-      itemId: r.item_id,
-      articleId: r.article_id,
-      title: r.title,
-      description: r.description,
-      x: r.x,
-      y: r.y,
-      embedding: r.embedding ? (JSON.parse(r.embedding) as number[]) : null,
-    }));
-  }
-
-  /**
-   * 임베딩이 없는 기사만 만들어 저장하고(다음부터 재사용), 임베딩이 있는 카드만 돌려준다 (F-08 처리 로직 1).
-   * 한 번에 못 만들면 기사별로 다시 시도하고, 그래도 실패한 기사는 분석에서 뺀다 (F-08 예외 처리).
-   * 하나도 만들지 못하면 EmbeddingError
-   */
-  private async ensureEmbeddings(cards: ArticleCard[]): Promise<ArticleCard[]> {
-    const missing = [...new Map(cards.filter((c) => !c.embedding).map((c) => [c.articleId, c])).values()];
-    const created = new Map<string, number[]>();
-    const textOf = (c: ArticleCard) => `${c.title}\n${c.description}`;
-    if (missing.length > 0) {
-      try {
-        const vectors = await this.deps.embedder.embed(missing.map(textOf));
-        missing.forEach((c, i) => created.set(c.articleId, vectors[i]!));
-      } catch (error) {
-        if (!(error instanceof EmbeddingError)) throw error;
-        for (const c of missing) {
-          try {
-            const [vector] = await this.deps.embedder.embed([textOf(c)]);
-            created.set(c.articleId, vector!);
-          } catch (single) {
-            if (!(single instanceof EmbeddingError)) throw single;
-          }
-        }
-        if (created.size === 0 && cards.every((c) => !c.embedding)) throw error;
-      }
-      for (const [articleId, vector] of created) {
-        await this.deps.pool.query('UPDATE articles SET embedding = $2::vector WHERE id = $1 AND embedding IS NULL', [
-          articleId,
-          `[${vector.join(',')}]`,
-        ]);
-      }
-    }
-    return cards
-      .map((c) => ({ ...c, embedding: c.embedding ?? created.get(c.articleId) ?? null }))
-      .filter((c) => c.embedding !== null);
-  }
-
   /** 요약이 실패하면 1회 다시 시도하고, 그래도 안 되면 대표 기사 제목으로 대신한다 (클러스터 자체는 보여 준다) */
-  private async summarize(group: ArticleCard[]): Promise<{ title: string; summary: string }> {
+  private async summarize(group: BoardArticle[]): Promise<{ title: string; summary: string }> {
     const input = group.map((c) => ({ title: c.title, text: c.description }));
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

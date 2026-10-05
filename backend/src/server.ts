@@ -14,6 +14,8 @@ import { BoardService } from './boards/service.js';
 import { AiQuota } from './ai/quota.js';
 import { createOpenAiClusterSummarizer, createOpenAiSummarizer } from './ai/summarizer.js';
 import { createOpenAiEmbedder } from './ai/embedder.js';
+import { createOpenAiAnswerer } from './ai/answerer.js';
+import { QaService } from './qa/service.js';
 import { ClusterService } from './clusters/service.js';
 import { LinkService } from './links/service.js';
 
@@ -33,13 +35,22 @@ const notifier: BoardNotifier = {
   cardsMoved: (...args) => boardNotifier.cardsMoved(...args),
   clustersChanged: (...args) => boardNotifier.clustersChanged(...args),
 };
+const embedder = createOpenAiEmbedder(env.OPENAI_API_KEY);
 const clusters = new ClusterService({
   pool,
   boards,
-  embedder: createOpenAiEmbedder(env.OPENAI_API_KEY),
+  embedder,
   summarizer: createOpenAiClusterSummarizer({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
   quota: new AiQuota(pool, { user: env.AI_CLUSTER_LIMIT_USER, ip: env.AI_CLUSTER_LIMIT_IP, total: env.AI_CLUSTER_LIMIT_TOTAL }),
   threshold: env.CLUSTER_SIMILARITY_THRESHOLD,
+});
+const qa = new QaService({
+  pool,
+  boards,
+  embedder,
+  answerer: createOpenAiAnswerer({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
+  quota: new AiQuota(pool, { user: env.AI_QA_LIMIT_USER, ip: env.AI_QA_LIMIT_IP, total: env.AI_QA_LIMIT_TOTAL }),
+  minSimilarity: env.QA_MIN_SIMILARITY,
 });
 const links = new LinkService({
   pool,
@@ -78,7 +89,7 @@ const app = createApp({
           }
         : null,
   },
-  boards: { boards, notifier, links, clusters },
+  boards: { boards, notifier, links, clusters, qa },
   appOrigin: env.APP_ORIGIN,
 });
 const server = createServer(app);
