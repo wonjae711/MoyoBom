@@ -16,6 +16,10 @@ import { createOpenAiClusterSummarizer, createOpenAiSummarizer } from './ai/summ
 import { createOpenAiEmbedder } from './ai/embedder.js';
 import { createOpenAiAnswerer } from './ai/answerer.js';
 import { QaService } from './qa/service.js';
+import { createOpenAiDigestWriter } from './ai/digestWriter.js';
+import { DigestService, MAX_SUBSCRIPTIONS, type DigestNotifier } from './digests/service.js';
+import { startDigestSchedule } from './digests/schedule.js';
+import { attachUserRooms } from './realtime/userRoom.js';
 import { ClusterService } from './clusters/service.js';
 import { LinkService } from './links/service.js';
 
@@ -51,6 +55,20 @@ const qa = new QaService({
   answerer: createOpenAiAnswerer({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
   quota: new AiQuota(pool, { user: env.AI_QA_LIMIT_USER, ip: env.AI_QA_LIMIT_IP, total: env.AI_QA_LIMIT_TOTAL }),
   minSimilarity: env.QA_MIN_SIMILARITY,
+});
+// 다이제스트 알림도 소켓 서버가 만들어진 뒤 채워진다
+const digestNotifier: DigestNotifier = { digestCreated: (...args) => userNotifier.digestCreated(...args) };
+const digests = new DigestService({
+  pool,
+  writer: createOpenAiDigestWriter({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
+  // 예약 실행은 계정당 구독 수만큼이 하루 상한 (IP 한도는 쓰지 않음)
+  scheduledQuota: new AiQuota(pool, { user: MAX_SUBSCRIPTIONS, ip: Number.MAX_SAFE_INTEGER, total: env.AI_DIGEST_LIMIT_TOTAL }),
+  manualQuota: new AiQuota(pool, {
+    user: env.AI_DIGEST_NOW_LIMIT_USER,
+    ip: env.AI_DIGEST_NOW_LIMIT_IP,
+    total: env.AI_DIGEST_NOW_LIMIT_TOTAL,
+  }),
+  notifier: digestNotifier,
 });
 const links = new LinkService({
   pool,
@@ -90,6 +108,7 @@ const app = createApp({
         : null,
   },
   boards: { boards, notifier, links, clusters, qa },
+  digests: { digests },
   appOrigin: env.APP_ORIGIN,
 });
 const server = createServer(app);
@@ -99,6 +118,8 @@ const io = new Server(server, { serveClient: false });
 attachSocketAuth(io, { jwtSecret: env.JWT_SECRET, appOrigin: env.APP_ORIGIN });
 attachNewsFeed(io, newsEvents);
 const boardNotifier = attachBoardSync(io, boards);
+const userNotifier = attachUserRooms(io);
+const digestSchedule = startDigestSchedule(digests);
 
 const newsSchedule = env.NEWS_COLLECTOR_ENABLED
   ? startNewsSchedule(createNewsCollector(env, pool, newsEvents), pool)
@@ -111,7 +132,7 @@ server.listen(env.PORT, () => {
 
 function shutdown(signal: string): void {
   console.log(`[server] ${signal} 수신, 종료합니다`);
-  void (newsSchedule?.stop() ?? Promise.resolve()).finally(() => {
+  void Promise.all([newsSchedule?.stop(), digestSchedule.stop()]).finally(() => {
     // io.close()가 HTTP 서버도 함께 닫는다
     void io.close(() => {
       void pool.end().then(() => process.exit(0));

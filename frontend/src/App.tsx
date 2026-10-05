@@ -5,6 +5,7 @@ import { RequireAuth } from './auth/RequireAuth'
 import { BoardListPage } from './board/BoardListPage'
 import { BoardPage } from './board/BoardPage'
 import { InvitePage } from './board/InvitePage'
+import { DigestPage } from './digests/DigestPage'
 import { NewsFeed } from './feed/NewsFeed'
 import { AppHeader } from './ui/AppHeader'
 
@@ -48,6 +49,15 @@ function App() {
                 <main>
                   <NewsFeed />
                 </main>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/digests"
+            element={
+              <RequireAuth>
+                <AppHeader />
+                <DigestPage />
               </RequireAuth>
             }
           />

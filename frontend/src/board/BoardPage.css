@@ -823,3 +823,10 @@
 .ask__source-actions a {
   color: inherit;
 }
+
+/* 머리글 "알림함" 링크 (F-09) */
+.board-header__digest {
+  font-size: 12px;
+  color: var(--color-gray-dark);
+  text-decoration: none;
+}

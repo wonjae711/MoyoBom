@@ -3,6 +3,7 @@ import { checkOrigin, requireAuth } from './auth/http.js';
 import { createArticlesRouter, type ArticlesRouteDeps } from './routes/articles.js';
 import { createAuthRouter, type AuthRouteDeps } from './routes/auth.js';
 import { createBoardsRouter, createInvitesRouter, type BoardRouteDeps } from './routes/boards.js';
+import { createDigestsRouter, type DigestRouteDeps } from './routes/digests.js';
 import { createOAuthRouter, type OAuthRouteDeps } from './routes/oauth.js';
 
 export interface AppDeps {
@@ -12,6 +13,8 @@ export interface AppDeps {
   auth: AuthRouteDeps;
   oauth: OAuthRouteDeps;
   boards: BoardRouteDeps;
+  /** 뉴스 다이제스트(F-09). 없으면 해당 API를 열지 않는다 */
+  digests?: DigestRouteDeps;
   appOrigin: string;
 }
 
@@ -34,6 +37,7 @@ export function createApp(deps: AppDeps): Express {
   app.use('/api/articles', authed, createArticlesRouter(deps.articles));
   app.use('/api/boards', authed, createBoardsRouter(deps.boards));
   app.use('/api/invites', authed, createInvitesRouter(deps.boards));
+  if (deps.digests) app.use('/api/digests', authed, createDigestsRouter(deps.digests));
 
   // 처리되지 않은 에러: 내부 메시지는 로그에만 남기고 응답에는 노출하지 않는다
   const onError: ErrorRequestHandler = (error, _req, res, _next) => {

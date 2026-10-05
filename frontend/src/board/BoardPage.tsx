@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { FeedArticle } from '../feed/types'
+import { DigestLink } from '../digests/DigestLink'
 import { useNow, useToast } from '../ui/hooks'
 import { clusterQuota, getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
 import { AskPanel } from './AskPanel'
@@ -262,6 +263,7 @@ export function BoardPage() {
           </div>
         </div>
         <div className="board-header__spacer" />
+        <DigestLink className="board-header__digest" />
         <MembersButton boardId={boardId} members={board.members} role={board.role} onMessage={toast.show} />
         {board.role === 'owner' && <BoardMenu boardId={boardId} title={board.title} onMessage={toast.show} />}
         {board.role === 'owner' && <InviteButton boardId={boardId} onMessage={toast.show} />}

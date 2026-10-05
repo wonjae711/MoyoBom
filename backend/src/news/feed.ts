@@ -90,7 +90,7 @@ export function searchTerms(q: string | undefined): string[] {
 }
 
 /** LIKE 패턴에서 %, _, \ 를 글자 그대로 찾도록 감싼다 */
-const escapeLike = (term: string) => term.replace(/[\\%_]/g, (c) => `\\${c}`);
+export const escapeLike = (term: string) => term.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
  * 두 조회 방식(최신순·수집 순)에 같이 쓰는 걸러내기 조건 (F-04).

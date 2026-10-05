@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router'
 import { useAuth } from '../auth/useAuth'
+import { DigestLink } from '../digests/DigestLink'
 import { Avatars } from './Avatars'
 import './AppHeader.css'
 
@@ -33,6 +34,7 @@ export function AppHeader() {
           보드
         </NavLink>
         <NavLink to="/feed">뉴스 탐색</NavLink>
+        <DigestLink />
       </nav>
       <div className="app-header__spacer" />
       {user && (

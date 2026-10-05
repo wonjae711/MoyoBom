@@ -20,7 +20,7 @@
 
 > ver.1.9 변경 (2026-10-05, F-04): ARTICLES에 검색용 GIN(pg_trgm) 인덱스(title || ' ' || description)와 INDEX(source) 추가 — 둘 다 api_collected만
 
-> ver.1.11 설계 (2026-10-05, F-09·C-08 — 구현 전): DIGEST_SUBSCRIPTIONS를 categories·keywords(text[])·send_hour(한국 시간 0~23시)·active로 바꾸고, 알림함 DIGESTS 추가(구독·받는 시각 UNIQUE로 중복 생성 방지, 상태 pending·ok·empty·failed, 포함 기사는 복사해 jsonb로 저장, read_at, 30일 보관). 구독 삭제 시 받은 알림은 남김(subscription_id null)
+> ver.1.11 변경 (2026-10-05, F-09·C-08 구현): DIGEST_SUBSCRIPTIONS를 categories·keywords(text[])·send_hour(한국 시간 0~23시)·active로 바꾸고, 알림함 DIGESTS 추가(구독·받는 시각 UNIQUE로 중복 생성 방지, 상태 pending·ok·empty·failed, 포함 기사는 복사해 jsonb로 저장, read_at, 30일 보관, CHECK(scheduled면 slot 필수·manual이면 null)). 구독 삭제 시 받은 알림은 남김(subscription_id null)
 
 > ver.1.10 변경 (2026-10-05, F-10): BOARD_CONNECTIONS 구현 — CHECK(from_item_id < to_item_id)로 카드 쌍을 정렬해 저장(A→B·B→A 같은 연결), version(만든 때의 보드 변경 순번) 추가, 카드·보드 삭제 시 함께 삭제, INDEX(board_id)·INDEX(to_item_id)
 

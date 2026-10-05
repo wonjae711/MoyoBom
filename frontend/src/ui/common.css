@@ -85,3 +85,18 @@
 .serif {
   font-family: var(--font-serif);
 }
+
+/* 머리글 "알림함" 옆 안 읽은 개수 (F-09) */
+.digest-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--color-black);
+  color: var(--color-white);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
