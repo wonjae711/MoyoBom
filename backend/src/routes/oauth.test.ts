@@ -134,6 +134,51 @@ describe('소셜 로그인 라우트', () => {
     expect(res.headers.location).toBe(`${TEST_APP_ORIGIN}/login?error=kakao_failed`);
   });
 
+  it('[네이버] 같은 흐름으로 state 쿠키를 두고 인가 페이지로 보낸 뒤, 콜백에서 로그인하고 원래 화면으로 보낸다', async () => {
+    const naver = { clientId: 'naver-id', clientSecret: 'naver-secret', redirectUri: `${TEST_APP_ORIGIN}/api/auth/naver/callback` };
+    const { app, loginWithSocial } = makeApp({ naver });
+    expect((await request(app).get('/api/auth/providers')).body).toEqual({ kakao: true, naver: true });
+
+    const start = await request(app).get('/api/auth/naver?next=%2Finvite%2Fabc');
+    const location = new URL(start.headers.location!);
+    expect(location.host).toBe('nid.naver.com');
+    const cookies = setCookies(start);
+    const stateCookie = cookies.find((c) => c.startsWith('oauth_state='))!;
+    expect(stateCookie).toMatch(/Path=\/api\/auth\/naver/);
+    const state = location.searchParams.get('state')!;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request) =>
+        String(url).includes('nid.naver.com/oauth2.0/token')
+          ? Response.json({ access_token: 'naver-access' })
+          : Response.json({ resultcode: '00', response: { id: 'naver-9', nickname: '네이버친구' } }),
+      ),
+    );
+    const res = await request(app)
+      .get(`/api/auth/naver/callback?code=abc&state=${state}`)
+      .set('Cookie', cookies.map((c) => c.split(';')[0]).join('; '));
+    vi.unstubAllGlobals();
+    expect(res.headers.location).toBe(`${TEST_APP_ORIGIN}/invite/abc`);
+    expect(loginWithSocial).toHaveBeenCalledWith({ provider: 'naver', providerId: 'naver-9', nickname: '네이버친구' });
+    expect(setCookies(res).some((c) => c.startsWith('access_token='))).toBe(true);
+  });
+
+  it('[네이버] 취소·state 불일치·키 없음은 네이버용 안내 코드로 로그인 화면에 돌려보낸다', async () => {
+    const naver = { clientId: 'naver-id', clientSecret: 'naver-secret', redirectUri: `${TEST_APP_ORIGIN}/api/auth/naver/callback` };
+    const { app, loginWithSocial } = makeApp({ naver });
+    const cancelled = await request(app)
+      .get('/api/auth/naver/callback?error=access_denied&state=s1')
+      .set('Cookie', 'oauth_state=s1');
+    expect(cancelled.headers.location).toBe(`${TEST_APP_ORIGIN}/login?error=naver_cancelled`);
+    const invalid = await request(app).get('/api/auth/naver/callback?code=abc&state=attacker').set('Cookie', 'oauth_state=s1');
+    expect(invalid.headers.location).toBe(`${TEST_APP_ORIGIN}/login?error=naver_invalid`);
+    expect((await request(makeApp().app).get('/api/auth/naver')).headers.location).toBe(
+      `${TEST_APP_ORIGIN}/login?error=naver_unavailable`,
+    );
+    expect(loginWithSocial).not.toHaveBeenCalled();
+  });
+
   it('카카오 키가 없으면 로그인 화면으로 돌려보낸다', async () => {
     const res = await request(makeApp({ kakao: null }).app).get('/api/auth/kakao');
     expect(res.headers.location).toBe(`${TEST_APP_ORIGIN}/login?error=kakao_unavailable`);

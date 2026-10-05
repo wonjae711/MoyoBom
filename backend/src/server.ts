@@ -68,6 +68,15 @@ const app = createApp({
             redirectUri: `${env.APP_ORIGIN}/api/auth/kakao/callback`,
           }
         : null,
+    naver:
+      env.NAVER_LOGIN_CLIENT_ID && env.NAVER_LOGIN_CLIENT_SECRET
+        ? {
+            clientId: env.NAVER_LOGIN_CLIENT_ID,
+            clientSecret: env.NAVER_LOGIN_CLIENT_SECRET,
+            // 네이버 개발자센터에 등록한 Callback URL과 같아야 한다
+            redirectUri: `${env.APP_ORIGIN}/api/auth/naver/callback`,
+          }
+        : null,
   },
   boards: { boards, notifier, links, clusters },
   appOrigin: env.APP_ORIGIN,

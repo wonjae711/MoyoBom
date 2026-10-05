@@ -27,6 +27,9 @@ const envSchema = z.object({
   /** 카카오 로그인 (선택). 없으면 카카오 로그인 버튼이 "준비 중"으로 표시된다 */
   KAKAO_REST_API_KEY: optionalString,
   KAKAO_CLIENT_SECRET: optionalString,
+  /** 네이버 로그인 (선택). 뉴스 검색용 NAVER_CLIENT_ID와 다른 앱의 키. 없으면 네이버 로그인 버튼이 "준비 중"으로 표시된다 */
+  NAVER_LOGIN_CLIENT_ID: optionalString,
+  NAVER_LOGIN_CLIENT_SECRET: optionalString,
 
   NAVER_CLIENT_ID: z.string().min(1),
   NAVER_CLIENT_SECRET: z.string().min(1),

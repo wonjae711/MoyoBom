@@ -139,3 +139,23 @@
   color: var(--color-black);
   font-weight: 600;
 }
+
+.auth__social--naver:enabled {
+  border-color: #03c75a;
+  background: #03c75a;
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 최근 로그인 방식 (결정 A) */
+.auth__recent {
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--color-black);
+  color: var(--color-white);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
