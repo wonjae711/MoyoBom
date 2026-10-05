@@ -26,6 +26,8 @@ const schemas = {
   'card:move': z.object({ boardId: id, itemId: id, x: coord, y: coord, rotation: z.number().finite().min(-360).max(360).optional() }),
   'card:update': z.object({ boardId: id, itemId: id, content: z.string().max(2000) }),
   'card:delete': z.object({ boardId: id, itemId: id }),
+  'connection:add': z.object({ boardId: id, fromId: id, toId: id }),
+  'connection:delete': z.object({ boardId: id, connectionId: id }),
 };
 
 export type AckResult = { ok: true; [key: string]: unknown } | { ok: false; error: string; message?: string };
@@ -128,6 +130,19 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
       const item = await boards.updateMemo(boardId, userId, itemId, content);
       socket.to(boardRoom(boardId)).emit('card:updated', { boardId, item, by: userId });
       return { ok: true, item };
+    });
+
+    // 카드 간 연결선 (F-10): 카드와 같은 규칙 — 저장 후 ack, 같은 room의 다른 사람에게 알림
+    on('connection:add', async ({ boardId, fromId, toId }) => {
+      const connection = await boards.addConnection(boardId, userId, fromId, toId);
+      socket.to(boardRoom(boardId)).emit('connection:added', { boardId, connection, by: userId });
+      return { ok: true, connection };
+    });
+
+    on('connection:delete', async ({ boardId, connectionId }) => {
+      const { version } = await boards.deleteConnection(boardId, userId, connectionId);
+      socket.to(boardRoom(boardId)).emit('connection:deleted', { boardId, connectionId, version, by: userId });
+      return { ok: true, version };
     });
 
     on('card:delete', async ({ boardId, itemId }) => {

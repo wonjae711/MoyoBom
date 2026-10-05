@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyEvent, emptyBoardState, fromSnapshot, stackedItems, type BoardEvent } from './boardState'
-import type { BoardItem, BoardSnapshot } from './types'
+import { applyEvent, emptyBoardState, fromSnapshot, stackedItems, visibleConnections, type BoardEvent } from './boardState'
+import type { BoardConnection, BoardItem, BoardSnapshot } from './types'
 
 function item(id: string, version: number, x = 0, zIndex = version): BoardItem {
   return {
@@ -22,7 +22,7 @@ function item(id: string, version: number, x = 0, zIndex = version): BoardItem {
 }
 
 function snapshot(seq: number, items: BoardItem[]): BoardSnapshot {
-  return { board: { id: '1', title: 'b', ownerId: '1', updatedAt: '', seq }, role: 'owner', members: [], items, clusters: [] }
+  return { board: { id: '1', title: 'b', ownerId: '1', updatedAt: '', seq }, role: 'owner', members: [], items, clusters: [], connections: [] }
 }
 
 const upsert = (i: BoardItem): BoardEvent => ({ kind: 'upsert', item: i })
@@ -79,5 +79,32 @@ describe('[C-11] 스냅샷 + join 전에 받은 이벤트', () => {
   it('화면에는 z 순서대로 쌓는다', () => {
     const state = fromSnapshot(snapshot(10, [item('1', 1, 0, 5), item('2', 2, 0, 3)]))
     expect(stackedItems(state).map((i) => i.id)).toEqual(['2', '1'])
+  })
+})
+
+describe('[F-10] 연결선 상태', () => {
+  const link = (id: string, version: number, fromId = '1', toId = '2'): BoardConnection => ({ id, fromId, toId, createdBy: '1', version })
+  const addLink = (c: BoardConnection): BoardEvent => ({ kind: 'link-add', connection: c })
+  const removeLink = (connectionId: string, version: number): BoardEvent => ({ kind: 'link-delete', connectionId, version })
+
+  it('추가·삭제를 순번으로 맞추고, 지운 뒤 늦게 온 추가로 되살아나지 않는다', () => {
+    let state = fromSnapshot(snapshot(10, [item('1', 1), item('2', 2)]))
+    state = applyEvent(state, addLink(link('c1', 11)))
+    expect(visibleConnections(state).map((c) => c.id)).toEqual(['c1'])
+    state = applyEvent(state, removeLink('c1', 13))
+    state = applyEvent(state, addLink(link('c1', 11)))
+    expect(visibleConnections(state)).toEqual([])
+  })
+
+  it('스냅샷에 든 연결선은 그대로, join 전에 온 이벤트는 스냅샷 순번보다 큰 것만 적용한다', () => {
+    const snap = { ...snapshot(10, [item('1', 1), item('2', 2), item('3', 3)]), connections: [link('c1', 9)] }
+    const state = fromSnapshot(snap, [addLink(link('c1', 9)), addLink(link('c2', 12, '2', '3')), removeLink('c1', 13)])
+    expect(visibleConnections(state).map((c) => c.id)).toEqual(['c2'])
+  })
+
+  it('한쪽 카드가 지워진 연결선은 그리지 않는다', () => {
+    let state = fromSnapshot({ ...snapshot(10, [item('1', 1), item('2', 2)]), connections: [link('c1', 5)] })
+    state = applyEvent(state, remove('2', 11))
+    expect(visibleConnections(state)).toEqual([])
   })
 })

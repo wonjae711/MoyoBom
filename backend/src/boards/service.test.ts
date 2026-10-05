@@ -222,6 +222,51 @@ describe.skipIf(!testDatabaseUrl)('BoardService (DB)', () => {
     });
   });
 
+  describe('[F-10] 카드 간 연결선', () => {
+    async function twoCards(boardId: string) {
+      const a = await boards.addItem(boardId, owner, { type: 'memo', content: 'A', x: 0, y: 0 });
+      const b = await boards.addItem(boardId, owner, { type: 'memo', content: 'B', x: 100, y: 0 });
+      return [a.id, b.id] as const;
+    }
+
+    it('두 카드를 잇고 스냅샷에 보인다 — 카드 쌍은 작은 id가 앞, 순번이 붙는다', async () => {
+      const boardId = await boardWithEditor();
+      const [a, b] = await twoCards(boardId);
+      const connection = await boards.addConnection(boardId, editor, b, a);
+      expect(connection).toMatchObject({ fromId: a, toId: b, createdBy: editor });
+      const snapshot = await boards.getSnapshot(boardId, owner);
+      expect(snapshot.connections).toEqual([connection]);
+      expect(connection.version).toBe(snapshot.board.seq);
+    });
+
+    it('[예외] 이미 연결된 쌍(방향 반대 포함)·같은 카드·다른 보드 카드·없는 카드는 거절한다', async () => {
+      const boardId = await boardWithEditor();
+      const [a, b] = await twoCards(boardId);
+      await boards.addConnection(boardId, owner, a, b);
+      await expectBoardError(boards.addConnection(boardId, owner, b, a), 'invalid');
+      await expectBoardError(boards.addConnection(boardId, owner, a, a), 'invalid');
+      const other = (await boards.createBoard(owner, '다른 보드')).id;
+      const c = await boards.addItem(other, owner, { type: 'memo', content: 'C', x: 0, y: 0 });
+      await expectBoardError(boards.addConnection(boardId, owner, a, c.id), 'not_found');
+      await expectBoardError(boards.addConnection(boardId, owner, a, '999999'), 'not_found');
+      await expectBoardError(boards.addConnection(boardId, outsider, a, b), 'not_found');
+    });
+
+    it('연결선을 지우면 순번을 돌려주고, 카드를 지우면 그 카드의 연결선도 사라진다', async () => {
+      const boardId = await boardWithEditor();
+      const [a, b] = await twoCards(boardId);
+      const c = (await boards.addItem(boardId, owner, { type: 'memo', content: 'C', x: 0, y: 0 })).id;
+      const ab = await boards.addConnection(boardId, owner, a, b);
+      await boards.addConnection(boardId, owner, a, c);
+      const { version } = await boards.deleteConnection(boardId, editor, ab.id);
+      expect(version).toBeGreaterThan(ab.version);
+      await expectBoardError(boards.deleteConnection(boardId, editor, ab.id), 'not_found');
+
+      await boards.deleteItem(boardId, owner, c);
+      expect((await boards.getSnapshot(boardId, owner)).connections).toEqual([]);
+    });
+  });
+
   describe('[L-06] 내보내기와 동시에 들어온 카드 변경', () => {
     /**
      * 주인이 편집자를 내보내는 트랜잭션이 보드 잠금을 잡고 멤버를 지운 뒤 아직 커밋하지 않은 순간에,

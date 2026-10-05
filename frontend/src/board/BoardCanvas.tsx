@@ -26,7 +26,7 @@ import {
   toBoard,
   type View,
 } from './cardLayout'
-import type { BoardCluster, BoardMember } from './types'
+import type { BoardCluster, BoardConnection, BoardMember } from './types'
 import type { ViewItem } from './useBoardSync'
 
 /** 피드에서 끌어 온 기사를 담는 드래그 데이터 형식 */
@@ -39,6 +39,15 @@ interface Props {
   /** AI 이슈 클러스터 (F-08) */
   clusters: BoardCluster[]
   onClusterAction: (clusterId: string, action: ClusterAction) => void
+  /** 카드 간 연결선 (F-10) */
+  connections: BoardConnection[]
+  selectedConnectionId: string | null
+  onSelectConnection: (id: string | null) => void
+  /** 연결선 긋기 모드: 카드를 누르면 선택 대신 연결 대상으로 고른다 */
+  connectMode: boolean
+  /** 연결선 긋기에서 먼저 고른 카드 */
+  connectFrom: string | null
+  onPickCard: (id: string) => void
   members: Map<string, BoardMember>
   view: View
   onViewChange: (view: View) => void
@@ -144,7 +153,10 @@ export function BoardCanvas(props: Props) {
           draggable
           onWheel={onWheel}
           onMouseDown={(e) => {
-            if (e.target === e.target.getStage()) props.onSelect(null)
+            if (e.target === e.target.getStage()) {
+              props.onSelect(null)
+              props.onSelectConnection(null)
+            }
           }}
           onDragEnd={(e) => {
             if (e.target === e.target.getStage()) onViewChange({ ...view, x: e.target.x(), y: e.target.y() })
@@ -152,6 +164,12 @@ export function BoardCanvas(props: Props) {
         >
           <Layer key={props.fontsVersion}>
             <ClusterLinks clusters={props.clusters} items={items} />
+            <ConnectionLines
+              connections={props.connections}
+              items={items}
+              selectedId={props.selectedConnectionId}
+              onSelect={props.connectMode ? undefined : props.onSelectConnection}
+            />
             {items.map((item) => (
               <Card key={item.id} item={item} {...props} />
             ))}
@@ -179,11 +197,14 @@ function Card({
   onDragMove,
   onEditMemo,
   now,
+  connectMode,
+  connectFrom,
+  onPickCard,
 }: Props & { item: ViewItem }) {
   const ref = useRef<Konva.Group>(null)
   const { width, height } = cardSize(item)
   const temp = item.id.startsWith('tmp-')
-  const selected = selectedId === item.id
+  const selected = connectMode ? connectFrom === item.id : selectedId === item.id
 
   // 서버 결과·다른 사람의 이동이 오면 위치를 맞춘다 (내가 드래그 중일 때는 건드리지 않음)
   useLayoutEffect(() => {
@@ -200,10 +221,12 @@ function Card({
       offsetY={height / 2}
       rotation={displayRotation(item)}
       opacity={item.pending ? 0.88 : 1}
-      draggable={!temp}
+      draggable={!temp && !connectMode}
       onMouseDown={(e) => {
         e.cancelBubble = true
-        onSelect(item.id)
+        if (connectMode) {
+          if (!temp) onPickCard(item.id)
+        } else onSelect(item.id)
       }}
       onDragStart={(e) => {
         e.target.moveToTop()
@@ -220,7 +243,7 @@ function Card({
       }}
       onMouseEnter={(e) => {
         const container = e.target.getStage()?.container()
-        if (container) container.style.cursor = 'grab'
+        if (container) container.style.cursor = connectMode ? 'crosshair' : 'grab'
       }}
       onMouseLeave={(e) => {
         const container = e.target.getStage()?.container()
@@ -374,6 +397,57 @@ function ClusterLinks({ clusters, items }: { clusters: BoardCluster[]; items: Vi
               listening={false}
             />
           ))
+      })}
+    </>
+  )
+}
+
+/**
+ * 사용자가 그은 카드 간 연결선 (F-10). 카드 가운데끼리 잇는 실선, 카드 아래에 그린다.
+ * 선이 가늘어 누르기 어려우므로 누를 수 있는 폭을 넓게 둔다
+ */
+function ConnectionLines({
+  connections,
+  items,
+  selectedId,
+  onSelect,
+}: {
+  connections: BoardConnection[]
+  items: ViewItem[]
+  selectedId: string | null
+  onSelect?: (id: string) => void
+}) {
+  const byId = new Map(items.map((i) => [i.id, i]))
+  return (
+    <>
+      {connections.map((c) => {
+        const from = byId.get(c.fromId)
+        const to = byId.get(c.toId)
+        if (!from || !to) return null
+        const selected = selectedId === c.id
+        return (
+          <Line
+            key={c.id}
+            points={[from.x, from.y, to.x, to.y]}
+            stroke={selected ? COLORS.white : 'rgba(255,255,255,0.75)'}
+            strokeWidth={selected ? 3 : 2}
+            dash={selected ? [8, 5] : undefined}
+            hitStrokeWidth={14}
+            listening={Boolean(onSelect)}
+            onMouseDown={(e) => {
+              e.cancelBubble = true
+              onSelect?.(c.id)
+            }}
+            onMouseEnter={(e) => {
+              const container = e.target.getStage()?.container()
+              if (container && onSelect) container.style.cursor = 'pointer'
+            }}
+            onMouseLeave={(e) => {
+              const container = e.target.getStage()?.container()
+              if (container) container.style.cursor = 'default'
+            }}
+          />
+        )
       })}
     </>
   )

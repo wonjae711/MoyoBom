@@ -31,6 +31,10 @@ export function BoardPage() {
   const [zoomMode, setZoomMode] = useState<ZoomMode>('fit')
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  /** 연결선 (F-10): 선택한 선, 긋기 모드, 긋기에서 먼저 고른 카드 */
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
+  const [connectMode, setConnectMode] = useState(false)
+  const [connectFrom, setConnectFrom] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [fontsVersion, setFontsVersion] = useState(0)
   const [linkRemaining, setLinkRemaining] = useState<number | null>(null)
@@ -162,25 +166,51 @@ export function BoardPage() {
   }
 
   const removeSelected = useCallback(() => {
+    if (selectedConnectionId) {
+      void board.deleteConnection(selectedConnectionId)
+      setSelectedConnectionId(null)
+      return
+    }
     if (!selectedId || selectedId.startsWith('tmp-')) return
     void board.deleteCard(selectedId)
     setSelectedId(null)
-  }, [selectedId, board])
+  }, [selectedId, selectedConnectionId, board])
+
+  const toggleConnectMode = () => {
+    setConnectMode((on) => !on)
+    setConnectFrom(null)
+    setSelectedId(null)
+    setSelectedConnectionId(null)
+  }
+
+  /** 연결선 긋기: 첫 카드를 고르고, 두 번째 카드를 누르면 잇는다 (같은 카드를 다시 누르면 고르기 취소) */
+  const pickCard = (id: string) => {
+    if (!connectFrom) return setConnectFrom(id)
+    if (connectFrom === id) return setConnectFrom(null)
+    const from = connectFrom
+    setConnectFrom(null)
+    void board.addConnection(from, id).then((ok) => ok && toast.show('카드를 연결했습니다'))
+  }
 
   // Delete·Backspace로 선택한 카드 삭제 (입력 중일 때는 제외)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedId || selectedConnectionId)) {
         e.preventDefault()
         removeSelected()
       }
-      if (e.key === 'Escape') setSelectedId(null)
+      if (e.key === 'Escape') {
+        setSelectedId(null)
+        setSelectedConnectionId(null)
+        setConnectMode(false)
+        setConnectFrom(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, removeSelected])
+  }, [selectedId, selectedConnectionId, removeSelected])
 
   const editingItem = editing ? board.items.find((i) => i.id === editing.id) : undefined
   const saveMemo = () => {
@@ -235,6 +265,15 @@ export function BoardPage() {
             items={board.items}
             clusters={board.clusters}
             onClusterAction={onClusterAction}
+            connections={board.connections}
+            selectedConnectionId={selectedConnectionId}
+            onSelectConnection={(id) => {
+              setSelectedConnectionId(id)
+              if (id) setSelectedId(null)
+            }}
+            connectMode={connectMode}
+            connectFrom={connectFrom}
+            onPickCard={pickCard}
             members={members}
             view={view}
             onViewChange={(v) => {
@@ -244,7 +283,10 @@ export function BoardPage() {
             }}
             onSize={onSize}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={(id) => {
+              setSelectedId(id)
+              if (id) setSelectedConnectionId(null)
+            }}
             onMoveEnd={(id, x, y) => void board.moveCard(id, x, y)}
             onDragMove={board.dragCard}
             onDropArticle={(article, x, y) => addArticle(article, x, y)}
@@ -260,7 +302,20 @@ export function BoardPage() {
             <button type="button" onClick={addMemo} disabled={board.status !== 'ready'}>
               + 메모
             </button>
-            <button type="button" onClick={removeSelected} disabled={!selectedId || selectedId.startsWith('tmp-')}>
+            <button
+              type="button"
+              className={connectMode ? 'is-on' : ''}
+              onClick={toggleConnectMode}
+              disabled={board.status !== 'ready'}
+              aria-pressed={connectMode}
+            >
+              연결선
+            </button>
+            <button
+              type="button"
+              onClick={removeSelected}
+              disabled={!selectedConnectionId && (!selectedId || selectedId.startsWith('tmp-'))}
+            >
               선택 삭제
             </button>
             <button
@@ -287,7 +342,11 @@ export function BoardPage() {
           </div>
           <DiversityPanel items={board.items} />
           <div className="board-hint">
-            {board.status === 'connecting'
+            {connectMode
+              ? connectFrom
+                ? '이을 카드를 누르세요 · Esc로 그만두기'
+                : '연결할 첫 카드를 누르세요 · Esc로 그만두기'
+              : board.status === 'connecting'
               ? '보드를 불러오는 중…'
               : board.items.length === 0
                 ? '왼쪽 피드에서 기사를 끌어다 놓거나 "+ 메모"로 시작하세요'

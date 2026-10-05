@@ -47,6 +47,15 @@ export interface BoardItem {
   arranged: boolean
 }
 
+/** 카드 간 수동 연결선 (F-10). 두 카드 id는 항상 작은 쪽이 fromId */
+export interface BoardConnection {
+  id: string
+  fromId: string
+  toId: string
+  createdBy: string | null
+  version: number
+}
+
 /** AI 이슈 클러스터 (F-08) */
 export interface BoardCluster {
   id: string
@@ -63,4 +72,5 @@ export interface BoardSnapshot {
   members: BoardMember[]
   items: BoardItem[]
   clusters: BoardCluster[]
+  connections: BoardConnection[]
 }

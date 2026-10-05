@@ -73,6 +73,7 @@ function snapshot(seq: number, items: BoardItem[]): BoardSnapshot {
     members: [{ userId: '1', nickname: '주인', role: 'owner' }],
     items,
     clusters: [],
+    connections: [],
   }
 }
 
@@ -256,6 +257,29 @@ describe('[F-05] 보드 실시간 동기화 훅', () => {
       fake.socket.fire('board:clusters', { boardId: '7', seq: 14, clusters: [cluster('late')] }) // 늦게 온 옛 소식
     })
     expect(result.current.clusters.map((c) => c.id)).toEqual(['b'])
+  })
+
+  it('[F-10] 연결선은 ack로 확정되고, 다른 사람이 긋고 지운 선도 반영된다', async () => {
+    const { result } = await joined([item('1', 8), item('2', 9)])
+    let added: Promise<boolean> = Promise.resolve(false)
+    act(() => {
+      added = result.current.addConnection('2', '1')
+    })
+    const payload = fake.reply('connection:add', {
+      ok: true,
+      connection: { id: 'c1', fromId: '1', toId: '2', createdBy: '1', version: 11 },
+    })
+    expect(payload).toMatchObject({ boardId: '7', fromId: '2', toId: '1' })
+    await act(async () => {
+      await added
+    })
+    expect(result.current.connections.map((c) => c.id)).toEqual(['c1'])
+
+    act(() => {
+      fake.socket.fire('connection:added', { boardId: '7', connection: { id: 'c2', fromId: '1', toId: '2', createdBy: '2', version: 12 } })
+      fake.socket.fire('connection:deleted', { boardId: '7', connectionId: 'c1', version: 13 })
+    })
+    expect(result.current.connections.map((c) => c.id)).toEqual(['c2'])
   })
 
   it('연결이 끊긴 상태에서의 변경은 저장하지 못했다고 바로 알린다', async () => {

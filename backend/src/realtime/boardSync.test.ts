@@ -212,6 +212,26 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
     expect(await deleted).toMatchObject({ itemId: memoId, version: (deleteAck as Ok<{ version: number }>).version });
   });
 
+  it('[F-10] 연결선을 긋고 지우면 다른 사람 화면에 바로 반영된다', async () => {
+    const { owner, friend } = await joinedPair();
+    const ids: string[] = [];
+    for (const content of ['A', 'B']) {
+      const ack = await emit<{ item: BoardItem }>(owner, 'card:add', { boardId, type: 'memo', content, x: 0, y: 0 });
+      ids.push((ack as Ok<{ item: BoardItem }>).item.id);
+    }
+
+    const added = next<{ connection: { id: string; fromId: string; toId: string } }>(friend, 'connection:added');
+    const ack = await emit<{ connection: { id: string } }>(owner, 'connection:add', { boardId, fromId: ids[1], toId: ids[0] });
+    expect(ack).toMatchObject({ ok: true });
+    expect((await added).connection).toMatchObject({ fromId: ids[0], toId: ids[1] });
+    expect(await emit(friend, 'connection:add', { boardId, fromId: ids[0], toId: ids[1] })).toMatchObject({ ok: false, error: 'invalid' });
+
+    const deleted = next<{ connectionId: string; version: number }>(owner, 'connection:deleted');
+    const connectionId = (ack as Ok<{ connection: { id: string } }>).connection.id;
+    expect(await emit(friend, 'connection:delete', { boardId, connectionId })).toMatchObject({ ok: true });
+    expect(await deleted).toMatchObject({ connectionId });
+  });
+
   it('드래그 중 위치(card:moving)는 다른 사람에게 중계만 하고 DB에는 저장하지 않는다', async () => {
     const { owner, friend } = await joinedPair();
     const ack = await emit<{ item: BoardItem }>(owner, 'card:add', { boardId, type: 'memo', content: 'x', x: 0, y: 0 });

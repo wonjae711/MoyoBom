@@ -5,6 +5,7 @@ import {
   BoardError,
   type BoardItem,
   type BoardCluster,
+  type BoardConnection,
   type BoardMember,
   type BoardRole,
   type BoardSnapshot,
@@ -223,6 +224,7 @@ export class BoardService {
         [boardId],
       );
       const clusters = await this.listClusters(boardId, client);
+      const connections = await this.listConnections(boardId, client);
       await client.query('COMMIT');
       const b = board.rows[0]!;
       return {
@@ -231,6 +233,7 @@ export class BoardService {
         members: members.rows.map((m): BoardMember => ({ userId: m.user_id, nickname: m.nickname, role: m.role })),
         items: items.rows.map(toItem),
         clusters,
+        connections,
       };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -575,5 +578,64 @@ export class BoardService {
     ]);
     if (!rows[0]) throw new BoardError('not_found', '이미 사라진 클러스터입니다');
     return rows[0];
+  }
+
+  // ---------- 카드 간 수동 연결선 (F-10) ----------
+
+  async listConnections(boardId: string, db: Db = this.pool): Promise<BoardConnection[]> {
+    const { rows } = await db.query<{ id: string; from_item_id: string; to_item_id: string; created_by: string | null; version: string }>(
+      `SELECT id, from_item_id, to_item_id, created_by, version::text AS version
+       FROM board_connections WHERE board_id = $1 ORDER BY id`,
+      [boardId],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      fromId: r.from_item_id,
+      toId: r.to_item_id,
+      createdBy: r.created_by,
+      version: Number(r.version),
+    }));
+  }
+
+  /**
+   * 두 카드를 잇는다. 카드 쌍은 작은 id를 from으로 정렬해 저장하므로 A→B·B→A가 같은 연결이다.
+   * 이미 연결된 쌍·같은 카드·다른 보드의 카드는 거절한다 (F-10 예외 처리)
+   */
+  async addConnection(boardId: string, userId: string, a: string, b: string): Promise<BoardConnection> {
+    return this.tx(async (client) => {
+      const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
+      if (a === b) throw new BoardError('invalid', '같은 카드끼리는 연결할 수 없습니다');
+      const [from, to] = BigInt(a) < BigInt(b) ? [a, b] : [b, a];
+      const { rowCount } = await client.query('SELECT 1 FROM board_items WHERE board_id = $1 AND id = ANY($2::bigint[])', [
+        boardId,
+        [from, to],
+      ]);
+      if (rowCount !== 2) throw new BoardError('not_found', '이미 삭제된 카드입니다');
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO board_connections (board_id, from_item_id, to_item_id, created_by, version)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (from_item_id, to_item_id) DO NOTHING RETURNING id`,
+        [boardId, from, to, userId, seq],
+      );
+      if (!rows[0]) throw new BoardError('invalid', '이미 연결된 카드입니다');
+      await this.log(client, boardId, userId, 'connection:add', { connectionId: rows[0].id, fromId: from, toId: to });
+      return { id: rows[0].id, fromId: from, toId: to, createdBy: userId, version: seq };
+    });
+  }
+
+  /** 연결선 삭제도 순번을 받는다 — 클라이언트는 이 순번 이하의 늦은 추가 이벤트로 선을 되살리지 않는다 */
+  async deleteConnection(boardId: string, userId: string, connectionId: string): Promise<{ version: number }> {
+    return this.tx(async (client) => {
+      const seq = await this.bump(client, boardId);
+      await this.requireRole(boardId, userId, 'member', client);
+      const { rowCount } = await client.query('DELETE FROM board_connections WHERE board_id = $1 AND id = $2', [
+        boardId,
+        connectionId,
+      ]);
+      if (!rowCount) throw new BoardError('not_found', '이미 지워진 연결선입니다');
+      await this.log(client, boardId, userId, 'connection:delete', { connectionId });
+      return { version: seq };
+    });
   }
 }

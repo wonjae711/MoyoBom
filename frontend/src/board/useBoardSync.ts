@@ -3,8 +3,16 @@ import { io, type Socket } from 'socket.io-client'
 import { addLink as postLink, dismissCluster, getBoard, moveCluster, runClusters } from './api'
 import { refreshSession } from '../api/client'
 import type { FeedArticle } from '../feed/types'
-import { applyEvent, emptyBoardState, fromSnapshot, stackedItems, type BoardEvent, type BoardState } from './boardState'
-import type { BoardCluster, BoardItem, BoardMember, BoardRole, BoardSnapshot } from './types'
+import {
+  applyEvent,
+  emptyBoardState,
+  fromSnapshot,
+  stackedItems,
+  visibleConnections,
+  type BoardEvent,
+  type BoardState,
+} from './boardState'
+import type { BoardCluster, BoardConnection, BoardItem, BoardMember, BoardRole, BoardSnapshot } from './types'
 
 /** 서버 ack를 기다리는 최대 시간 */
 const ACK_TIMEOUT_MS = 8000
@@ -76,6 +84,11 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
   const fail = useCallback((message: string) => onErrorRef.current?.(message), [])
 
   const receive = useCallback((event: BoardEvent) => {
+    if (event.kind === 'link-add' || event.kind === 'link-delete') {
+      if (buffer.current) buffer.current.push(event)
+      else setServer((prev) => applyEvent(prev, event))
+      return
+    }
     const id = event.kind === 'upsert' ? event.item.id : event.itemId
     setRemoteDrag((prev) => {
       if (!prev.has(id)) return prev
@@ -152,6 +165,12 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     socket.on('card:moving', (d: { boardId: string; itemId: string; x: number; y: number }) => {
       if (!mine(d)) return
       setRemoteDrag((prev) => new Map(prev).set(d.itemId, { x: d.x, y: d.y, at: Date.now() }))
+    })
+    socket.on('connection:added', (d: { boardId: string; connection: BoardConnection }) => {
+      if (mine(d)) receive({ kind: 'link-add', connection: d.connection })
+    })
+    socket.on('connection:deleted', (d: { boardId: string; connectionId: string; version: number }) => {
+      if (mine(d)) receive({ kind: 'link-delete', connectionId: d.connectionId, version: d.version })
     })
     socket.on('board:clusters', (d: { boardId: string; seq: number; clusters: BoardCluster[] }) => {
       if (!mine(d)) return
@@ -395,6 +414,40 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     [boardId, settle, fail],
   )
 
+  /** 연결선 (F-10): 서버 ack로 확정한다 (선은 가볍고 중복·삭제된 카드 검사가 서버에 있어 낙관적 반영은 하지 않음) */
+  const [hiddenConnections, setHiddenConnections] = useState<Set<string>>(new Set())
+  const connections = useMemo(
+    () => visibleConnections(server).filter((c) => !hiddenConnections.has(c.id)),
+    [server, hiddenConnections],
+  )
+
+  const addConnection = useCallback(
+    async (fromId: string, toId: string) => {
+      const res = await send<{ connection: BoardConnection }>('connection:add', { fromId, toId })
+      if (res.ok) setServer((prev) => applyEvent(prev, { kind: 'link-add', connection: res.connection }))
+      else fail(res.message ?? '연결선을 만들지 못했습니다')
+      return res.ok
+    },
+    [send, fail],
+  )
+
+  const deleteConnection = useCallback(
+    async (connectionId: string) => {
+      setHiddenConnections((prev) => new Set(prev).add(connectionId))
+      const res = await send<{ version: number }>('connection:delete', { connectionId })
+      if (res.ok) setServer((prev) => applyEvent(prev, { kind: 'link-delete', connectionId, version: res.version }))
+      else if (res.error === 'not_found')
+        setServer((prev) => applyEvent(prev, { kind: 'link-delete', connectionId, version: Number.MAX_SAFE_INTEGER }))
+      else fail(res.message ?? '연결선을 지우지 못했습니다')
+      setHiddenConnections((prev) => {
+        const next = new Set(prev)
+        next.delete(connectionId)
+        return next
+      })
+    },
+    [send, fail],
+  )
+
   const saving = overlays.adds.size + overlays.moves.size + overlays.memos.size + overlays.deleting.size > 0
 
   return {
@@ -412,6 +465,9 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     deleteCard,
     addLink,
     clusters: clusters.list,
+    connections,
+    addConnection,
+    deleteConnection,
     analyze,
     dismiss,
     arrange,
