@@ -20,6 +20,8 @@
 
 > ver.1.9 변경 (2026-10-05, F-04): ARTICLES에 검색용 GIN(pg_trgm) 인덱스(title || ' ' || description)와 INDEX(source) 추가 — 둘 다 api_collected만
 
+> ver.1.11 설계 (2026-10-05, F-09·C-08 — 구현 전): DIGEST_SUBSCRIPTIONS를 categories·keywords(text[])·send_hour(한국 시간 0~23시)·active로 바꾸고, 알림함 DIGESTS 추가(구독·받는 시각 UNIQUE로 중복 생성 방지, 상태 pending·ok·empty·failed, 포함 기사는 복사해 jsonb로 저장, read_at, 30일 보관). 구독 삭제 시 받은 알림은 남김(subscription_id null)
+
 > ver.1.10 변경 (2026-10-05, F-10): BOARD_CONNECTIONS 구현 — CHECK(from_item_id < to_item_id)로 카드 쌍을 정렬해 저장(A→B·B→A 같은 연결), version(만든 때의 보드 변경 순번) 추가, 카드·보드 삭제 시 함께 삭제, INDEX(board_id)·INDEX(to_item_id)
 
 ### 1. 시각화 다이어그램 (Mermaid)
@@ -38,6 +40,8 @@ BOARD_ITEMS ||--o{ BOARD_CONNECTIONS : "connects_from"
 BOARD_ITEMS ||--o{ CLUSTER_ITEMS : "belongs_to"
 CLUSTERS ||--o{ CLUSTER_ITEMS : "includes"
 USERS ||--o{ DIGEST_SUBSCRIPTIONS : "subscribes"
+USERS ||--o{ DIGESTS : "receives"
+DIGEST_SUBSCRIPTIONS ||--o{ DIGESTS : "produces"
 USERS ||--o{ ARTICLES : "submits"
 USERS ||--o{ REFRESH_TOKENS : "has"
 
@@ -149,9 +153,28 @@ bigint board_item_id PK "FK UNIQUE, 카드 삭제 시 함께 삭제"
 
 DIGEST_SUBSCRIPTIONS {
 bigint id PK
-bigint user_id FK
-jsonb keywords
-time send_time
+bigint user_id FK "탈퇴 시 함께 삭제"
+text[] categories "카테고리 코드, 비어도 됨"
+text[] keywords "0~5개, 각 20자 이내"
+smallint send_hour "한국 시간 0~23시 정각"
+boolean active "끄면 예약 실행만 멈춤"
+timestamptz created_at
+timestamptz updated_at
+}
+
+DIGESTS {
+bigint id PK
+bigint user_id FK "탈퇴 시 함께 삭제"
+bigint subscription_id FK "구독 삭제 시 null (알림은 남김)"
+string kind "scheduled | manual(지금 받아보기)"
+timestamptz slot "예약 실행의 받는 시각, manual은 null"
+string status "pending | ok | empty | failed"
+string title "이슈 이름 또는 '10월 5일 경제 브리핑'"
+text summary "AI 종합 요약, 기사 없음·실패 시 null"
+jsonb articles "포함 기사 복사본 [{id, title, source, link}]"
+timestamptz window_start "대상 기사 수집 구간"
+timestamptz window_end
+timestamptz read_at "읽음, null이면 안 읽음"
 timestamptz created_at
 }
 
@@ -197,6 +220,9 @@ timestamptz created_at
 | BOARD_EVENTS | INDEX(board_id, created_at) | 변경 이력(히스토리) 타임라인 조회 성능. 되돌리기(undo)는 F-05에서 범위 제외 |
 | BOARD_CONNECTIONS | UNIQUE(from_item_id, to_item_id), CHECK(from_item_id < to_item_id) | 같은 카드 쌍 중복 연결 방지 (F-10). 저장 시 작은 id를 from으로 정렬해 A→B / B→A 중복도 방지 (ver.1.10 구현) |
 | CLUSTER_ITEMS | UNIQUE(board_item_id) | 카드 하나는 동시에 하나의 클러스터에만 속함 |
+| DIGEST_SUBSCRIPTIONS | CHECK(categories나 keywords 중 하나는 비어 있지 않음), CHECK(send_hour 0~23), CHECK(keywords 5개 이하), INDEX(send_hour) WHERE active | 빈 구독 방지, 시각별 실행 대상 조회 (F-09). 1인당 3개는 서비스에서 사용자 행 잠금 후 확인 |
+| DIGESTS | UNIQUE(subscription_id, slot) | 같은 구독·같은 받는 시각에 다이제스트를 한 번만 만든다 — 먼저 pending 행을 넣은 실행만 진행 (F-09, C-08) |
+| DIGESTS | INDEX(user_id, created_at DESC), INDEX(user_id) WHERE read_at IS NULL | 알림함 목록·안 읽은 개수 (F-09) |
 
 ### 3. 설계의 핵심 포인트
 
