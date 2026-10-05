@@ -70,6 +70,46 @@ export interface FeedQuery {
   /** 지정하면 이 위치 뒤에 수집된 기사를 수집 순서(먼저 수집된 것부터)로 준다 — 재연결 시 누락분 보완용 */
   collectedAfter?: CollectedCursor;
   category?: CategoryCode;
+  /** 검색어 (F-04). 띄어쓰기로 나눈 낱말이 모두 제목이나 요약에 들어 있는 기사만 */
+  q?: string;
+  /** 언론사 이름 정확히 일치 (F-04) */
+  source?: string;
+  /** 발행 시각 범위 [from, to) (F-04) */
+  from?: Date;
+  to?: Date;
+}
+
+/** 검색어를 낱말로 나눈다 (최대 5개, 너무 짧은 한 글자 기호 제외) */
+export function searchTerms(q: string | undefined): string[] {
+  if (!q) return [];
+  return q
+    .split(/[\s,]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+    .slice(0, 5);
+}
+
+/** LIKE 패턴에서 %, _, \ 를 글자 그대로 찾도록 감싼다 */
+const escapeLike = (term: string) => term.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/**
+ * 두 조회 방식(최신순·수집 순)에 같이 쓰는 걸러내기 조건 (F-04).
+ * 검색은 제목·요약을 합친 글에서 낱말마다 ILIKE로 찾는다 (pg_trgm GIN 인덱스가 같은 식을 쓴다)
+ */
+function filterConditions(query: FeedQuery, params: unknown[]): string[] {
+  const where = [`source_type = 'api_collected'`];
+  const add = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  if (query.category) where.push(`category = ${add(query.category)}`);
+  if (query.source) where.push(`source = ${add(query.source)}`);
+  if (query.from) where.push(`published_at >= ${add(query.from)}`);
+  if (query.to) where.push(`published_at < ${add(query.to)}`);
+  for (const term of searchTerms(query.q)) {
+    where.push(`(title || ' ' || description) ILIKE ${add(`%${escapeLike(term)}%`)} ESCAPE '\\'`);
+  }
+  return where;
 }
 
 export interface FeedPage {
@@ -124,11 +164,7 @@ export function listFeed(pool: pg.Pool, query: FeedQuery): Promise<FeedPage> {
 /** 발행 시각 최신순. 지금까지 수집된 마지막 위치(collectedCursor)도 같이 준다 */
 async function listLatest(pool: pg.Pool, query: FeedQuery): Promise<FeedPage> {
   const params: unknown[] = [query.limit + 1];
-  const where = [`source_type = 'api_collected'`];
-  if (query.category) {
-    params.push(query.category);
-    where.push(`category = $${params.length}`);
-  }
+  const where = filterConditions(query, params);
   if (query.before) {
     params.push(query.before.publishedAt, query.before.id);
     where.push(`(published_at, id) < ($${params.length - 1}, $${params.length})`);
@@ -161,14 +197,10 @@ async function listLatest(pool: pg.Pool, query: FeedQuery): Promise<FeedPage> {
 async function listCollectedAfter(pool: pg.Pool, query: FeedQuery, after: CollectedCursor): Promise<FeedPage> {
   const params: unknown[] = [query.limit + 1, after.micros, after.id];
   const where = [
-    `source_type = 'api_collected'`,
+    ...filterConditions(query, params),
     // 마이크로초 정수를 그대로 timestamptz로 바꿔 비교 (부동소수점 변환 오차 방지)
     `(created_at, id) > (timestamptz 'epoch' + $2::bigint * interval '1 microsecond', $3::bigint)`,
   ];
-  if (query.category) {
-    params.push(query.category);
-    where.push(`category = $${params.length}`);
-  }
 
   const { rows } = await pool.query<FeedRow>(
     `SELECT ${FEED_COLUMNS}
@@ -187,4 +219,20 @@ async function listCollectedAfter(pool: pg.Pool, query: FeedQuery, after: Collec
     nextCursor: rows.length > query.limit ? reached : null,
     collectedCursor: reached,
   };
+}
+
+export interface SourceCount {
+  source: string;
+  count: number;
+}
+
+/** 언론사 필터 목록 (F-04): 최근 30일 수집 기사가 많은 순으로 */
+export async function listSources(pool: pg.Pool, limit = 40): Promise<SourceCount[]> {
+  const { rows } = await pool.query<{ source: string; count: number }>(
+    `SELECT source, count(*)::int AS count FROM articles
+     WHERE source_type = 'api_collected' AND created_at > now() - interval '30 days'
+     GROUP BY source ORDER BY count DESC, source LIMIT $1`,
+    [limit],
+  );
+  return rows;
 }

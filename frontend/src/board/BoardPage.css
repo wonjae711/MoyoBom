@@ -120,12 +120,6 @@
   animation: pulse 1.4s infinite;
 }
 
-.feed-panel__tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
 .feed-panel__list {
   flex: 1;
   overflow-y: auto;

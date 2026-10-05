@@ -69,6 +69,27 @@ describe('GET /api/articles', () => {
     expect(listFeed).toHaveBeenCalledWith({ limit: 100, collectedAfter: { micros: '1790000000123456', id: '42' } });
   });
 
+  it('[F-04] 검색어·언론사·기간(한국 시간 날짜)을 해석해 넘긴다', async () => {
+    const { app, listFeed } = makeApp();
+    await request(app)
+      .get(`/api/articles?q=${encodeURIComponent(' 반도체 규제 ')}&source=${encodeURIComponent('한겨레')}&from=2026-10-01&to=2026-10-03`)
+      .set('Cookie', await authCookie());
+    expect(listFeed).toHaveBeenCalledWith({
+      limit: 30,
+      q: '반도체 규제',
+      source: '한겨레',
+      from: new Date('2026-09-30T15:00:00.000Z'),
+      to: new Date('2026-10-03T15:00:00.000Z'),
+    });
+  });
+
+  it('[F-04] 기간의 시작이 끝보다 늦거나 날짜 형식이 틀리면 400', async () => {
+    const { app } = makeApp();
+    const cookie = await authCookie();
+    expect((await request(app).get('/api/articles?from=2026-10-05&to=2026-10-01').set('Cookie', cookie)).status).toBe(400);
+    expect((await request(app).get('/api/articles?from=10월1일').set('Cookie', cookie)).status).toBe(400);
+  });
+
   it.each([
     ['limit=0', 'limit'],
     ['limit=101', 'limit'],

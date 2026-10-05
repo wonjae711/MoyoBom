@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import { UnauthorizedError, apiFetch, refreshSession } from '../api/client'
 import { CATCH_UP_PAGE_SIZE, catchUp, catchUpStart, cursorOf, laterCursor } from './catchUp'
+import { filterParams, matchesFilters, type FeedFilters } from './filters'
 import { mergeArticles } from './merge'
 import { NEW_ARTICLES_EVENT, type FeedArticle, type FeedPage, type NewArticlesPayload } from './types'
 
@@ -14,14 +15,14 @@ export const AUTO_RETRY_DELAYS_MS = [3_000, 10_000, 30_000]
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
 // 로그인이 만료됐으면 apiFetch가 토큰 갱신 후 다시 요청하고, 그래도 실패하면 로그인 화면으로 보낸다
-function fetchFeed(before?: string): Promise<FeedPage> {
-  const params = new URLSearchParams({ limit: String(PAGE_SIZE) })
+function fetchFeed(filters: FeedFilters, before?: string): Promise<FeedPage> {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), ...filterParams(filters) })
   if (before) params.set('before', before)
   return apiFetch<FeedPage>(`/api/articles?${params}`)
 }
 
-function fetchCollectedAfter(cursor: string): Promise<FeedPage> {
-  const params = new URLSearchParams({ limit: String(CATCH_UP_PAGE_SIZE), collectedAfter: cursor })
+function fetchCollectedAfter(filters: FeedFilters, cursor: string): Promise<FeedPage> {
+  const params = new URLSearchParams({ limit: String(CATCH_UP_PAGE_SIZE), collectedAfter: cursor, ...filterParams(filters) })
   return apiFetch<FeedPage>(`/api/articles?${params}`)
 }
 
@@ -36,8 +37,12 @@ const earlierCursor = (a: string | null, b: string | null) => (laterCursor(a, b)
  *   너무 많이 놓쳤으면(최대 500건 초과) 이어 받지 않고 목록을 최신 페이지로 새로 시작한다
  * - 인증: 소켓 연결이 거절되면 토큰을 갱신해 다시 연결 (F-07)
  * - 실패: 처음 조회나 누락분 보완이 실패하면 몇 번 자동으로 다시 시도하고, 그 뒤엔 retry()로 다시 시도 (L-03)
+ * - 검색·필터 (F-04): 모든 조회에 같은 조건을 붙이고, 실시간 기사도 같은 조건으로 거른다.
+ *   조건은 처음 받은 값으로 고정된다 — 조건을 바꾸려면 이 훅을 쓰는 컴포넌트를 key로 새로 만든다
+ *   (이전 조건의 응답이 늦게 도착해 섞이는 일이 없도록)
  */
-export function useNewsFeed() {
+export function useNewsFeed(initialFilters: FeedFilters = {}) {
+  const [filters] = useState(initialFilters)
   const [articles, setArticles] = useState<FeedArticle[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
@@ -81,12 +86,12 @@ export function useNewsFeed() {
 
   /** 최신 페이지로 목록을 채운다. reset이면 기존 목록을 버린다 */
   const loadLatest = useCallback(async (reset: boolean) => {
-    const page = await fetchFeed()
+    const page = await fetchFeed(filters)
     setArticles((prev) => mergeArticles(reset ? [] : prev, page.articles))
     setNextCursor(page.nextCursor)
     collected.current = laterCursor(collected.current, page.collectedCursor)
     initialized.current = true
-  }, [])
+  }, [filters])
 
   /** 처음이면 최신 페이지를, 놓친 구간이 있으면 그 구간을 받는다 */
   const runSync = useCallback(async () => {
@@ -99,7 +104,7 @@ export function useNewsFeed() {
     const from = gapFrom.current
     gapFrom.current = undefined
     try {
-      const result = await catchUp(fetchCollectedAfter, catchUpStart(from))
+      const result = await catchUp((cursor) => fetchCollectedAfter(filters, cursor), catchUpStart(from))
       if (!result.complete) {
         setHighlighted(new Set())
         await loadLatest(true)
@@ -114,7 +119,7 @@ export function useNewsFeed() {
       gapFrom.current = gapFrom.current === undefined ? from : earlierCursor(from, gapFrom.current)
       throw e
     }
-  }, [loadLatest, highlight])
+  }, [loadLatest, highlight, filters])
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current) clearTimeout(retryTimer.current)
@@ -168,7 +173,7 @@ export function useNewsFeed() {
     loadingMoreRef.current = true
     setLoadingMore(true)
     try {
-      const page = await fetchFeed(nextCursor)
+      const page = await fetchFeed(filters, nextCursor)
       setArticles((prev) => mergeArticles(prev, page.articles))
       setNextCursor(page.nextCursor)
       setMoreError(null)
@@ -178,7 +183,7 @@ export function useNewsFeed() {
       loadingMoreRef.current = false
       setLoadingMore(false)
     }
-  }, [nextCursor])
+  }, [nextCursor, filters])
 
   useEffect(() => {
     // 같은 출처의 /socket.io로 연결 (개발: Vite 프록시, 배포: nginx)
@@ -212,16 +217,19 @@ export function useNewsFeed() {
         void sync()
         return
       }
-      setArticles((prev) => mergeArticles(prev, payload.articles))
-      highlight(payload.articles.map((a) => a.id))
+      // 받은 위치는 조건과 상관없이 앞으로 옮긴다 (조건에 안 맞는 기사도 "확인한" 기사다)
       for (const article of payload.articles) collected.current = laterCursor(collected.current, cursorOf(article))
+      const matched = payload.articles.filter((a) => matchesFilters(a, filters))
+      if (matched.length === 0) return
+      setArticles((prev) => mergeArticles(prev, matched))
+      highlight(matched.map((a) => a.id))
     })
 
     return () => {
       clearRetry()
       socket.disconnect()
     }
-  }, [sync, markGap, highlight, clearRetry])
+  }, [sync, markGap, highlight, clearRetry, filters])
 
   return {
     articles,

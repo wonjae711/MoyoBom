@@ -1,11 +1,19 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestPool, testDatabaseUrl } from '../test/db.js';
-import { compareFeed, decodeCollectedCursor, decodeCursor, encodeCursor, listFeed, type FeedArticle } from './feed.js';
+import { compareFeed, decodeCollectedCursor, decodeCursor, encodeCursor, listFeed, listSources, searchTerms, type FeedArticle } from './feed.js';
 
 function feedArticle(id: string, publishedAt: string): FeedArticle {
   return { id, title: id, description: '', source: 's', category: 'economy', originalLink: `https://e.com/${id}`, publishedAt, collectedAt: publishedAt };
 }
+
+describe('[F-04] 검색어 나누기', () => {
+  it('띄어쓰기·쉼표로 나누고 최대 5개까지', () => {
+    expect(searchTerms(' 수출 규제,  호르무즈 ')).toEqual(['수출', '규제', '호르무즈'])
+    expect(searchTerms('a b c d e f g')).toHaveLength(5)
+    expect(searchTerms(undefined)).toEqual([])
+  })
+})
 
 describe('피드 커서·정렬', () => {
   it('커서를 문자열로 바꿨다가 그대로 되돌린다', () => {
@@ -132,6 +140,70 @@ describe.skipIf(!testDatabaseUrl)('listFeed (DB)', () => {
     expect(titles).toHaveLength(25);
     expect(pages).toBe(3);
   });
+
+  /** 검색용: 제목·요약·언론사·카테고리·발행 시각을 정해 넣는다 */
+  async function insertFull(title: string, opts: { description?: string; source?: string; category?: string; publishedAt?: string } = {}) {
+    await pool.query(
+      `INSERT INTO articles (title, description, source, category, original_link, source_type, published_at)
+       VALUES ($1, $2, $3, $4, $5, 'api_collected', $6)`,
+      [title, opts.description ?? '', opts.source ?? '한겨레', opts.category ?? 'economy', `https://e.com/${encodeURIComponent(title)}`, opts.publishedAt ?? '2026-10-01T10:00:00Z'],
+    );
+  }
+  const titles = (page: { articles: { title: string }[] }) => page.articles.map((a) => a.title).sort();
+
+  it('[F-04] 검색어의 낱말이 모두 제목이나 요약에 들어 있는 기사만 찾는다 (영문 대소문자 무시)', async () => {
+    await insertFull('반도체 수출 규제 확대', { description: '장비 통제' });
+    await insertFull('반도체 실적 호조');
+    await insertFull('수출 감소', { description: '반도체 부진' });
+    await insertFull('AI 칩 경쟁');
+    expect(titles(await listFeed(pool, { limit: 10, q: '반도체' }))).toEqual(['반도체 수출 규제 확대', '반도체 실적 호조', '수출 감소']);
+    expect(titles(await listFeed(pool, { limit: 10, q: '반도체 수출' }))).toEqual(['반도체 수출 규제 확대', '수출 감소']);
+    expect(titles(await listFeed(pool, { limit: 10, q: 'ai' }))).toEqual(['AI 칩 경쟁']);
+    expect((await listFeed(pool, { limit: 10, q: '없는말' })).articles).toEqual([]);
+  })
+
+  it('[F-04] %·_ 같은 검색 기호는 글자 그대로 찾는다', async () => {
+    await insertFull('금리 0.5%p 인상');
+    await insertFull('금리 동결');
+    expect(titles(await listFeed(pool, { limit: 10, q: '%' }))).toEqual(['금리 0.5%p 인상']);
+    expect((await listFeed(pool, { limit: 10, q: '_' })).articles).toEqual([]);
+  })
+
+  it('[F-04] 카테고리·언론사·기간을 함께 걸러 내고, 검색어 없이 필터만 써도 된다', async () => {
+    await insertFull('A', { source: '한겨레', category: 'economy', publishedAt: '2026-10-01T10:00:00Z' });
+    await insertFull('B', { source: '조선일보', category: 'economy', publishedAt: '2026-10-02T10:00:00Z' });
+    await insertFull('C', { source: '한겨레', category: 'sports', publishedAt: '2026-10-03T10:00:00Z' });
+    await insertFull('D', { source: '한겨레', category: 'economy', publishedAt: '2026-10-05T10:00:00Z' });
+    const page = await listFeed(pool, {
+      limit: 10,
+      category: 'economy',
+      source: '한겨레',
+      from: new Date('2026-10-01T00:00:00+09:00'),
+      to: new Date('2026-10-04T00:00:00+09:00'),
+    })
+    expect(titles(page)).toEqual(['A']);
+  })
+
+  it('[F-04] 걸러 낸 결과에서도 더 보기 커서와 재연결 보완(수집 순)이 같은 조건으로 동작한다', async () => {
+    for (let i = 1; i <= 3; i++) await insertFull(`반도체 ${i}`, { publishedAt: `2026-10-0${i}T10:00:00Z` });
+    await insertFull('야구 소식', { publishedAt: '2026-10-04T10:00:00Z' });
+    const first = await listFeed(pool, { limit: 2, q: '반도체' });
+    expect(first.articles.map((a) => a.title)).toEqual(['반도체 3', '반도체 2']);
+    const next = await listFeed(pool, { limit: 2, q: '반도체', before: decodeCursor(first.nextCursor!)! });
+    expect(next.articles.map((a) => a.title)).toEqual(['반도체 1']);
+    const caught = await listFeed(pool, { limit: 10, q: '반도체', collectedAfter: { micros: '0', id: '0' } });
+    expect(caught.articles.map((a) => a.title)).toEqual(['반도체 1', '반도체 2', '반도체 3']);
+  })
+
+  it('[F-04] 언론사 필터 목록은 최근 기사가 많은 순', async () => {
+    await insertFull('a', { source: '조선일보' });
+    await insertFull('b', { source: '한겨레' });
+    await insertFull('c', { source: '한겨레' });
+    expect(await listSources(pool)).toEqual([
+      { source: '한겨레', count: 2 },
+      { source: '조선일보', count: 1 },
+    ])
+  })
 
   it('사용자가 링크로 추가한 기사(user_submitted)는 피드에 넣지 않는다', async () => {
     await insert('api', '2026-10-01T10:00:00Z');

@@ -1,15 +1,15 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
+import { FeedFilterBar } from '../feed/FeedFilterBar'
+import { emptyFilterState, hasFilters, toFeedFilters, type FeedFilters, type FilterState } from '../feed/filters'
 import { formatRelativeTime } from '../feed/merge'
-import { CATEGORY_LABELS, type CategoryCode, type FeedArticle } from '../feed/types'
-import { useNewsFeed } from '../feed/useNewsFeed'
+import { CATEGORY_LABELS, type FeedArticle } from '../feed/types'
+import { useNewsFeed, type ConnectionStatus } from '../feed/useNewsFeed'
 import { ARTICLE_DRAG_TYPE } from './BoardCanvas'
-
-const TABS: ('all' | CategoryCode)[] = ['all', ...(Object.keys(CATEGORY_LABELS) as CategoryCode[])]
 
 /**
  * 보드 왼쪽 실시간 뉴스 피드 (F-02 + F-05). 기사를 오른쪽 보드로 끌어다 놓거나 "+ 보드에" 버튼으로 추가한다.
- * 카테고리 탭은 받아 둔 기사 안에서 거른다.
+ * 검색창·카테고리로 서버에서 걸러 받는다 (F-04)
  */
 export function FeedPanel({
   onAdd,
@@ -24,9 +24,10 @@ export function FeedPanel({
   linkRemaining: number | null
   now: Date
 }) {
-  const { articles, status, loading, error, highlighted, hasMore, loadMore, loadingMore, moreError, retry } = useNewsFeed()
-  const [tab, setTab] = useState<'all' | CategoryCode>('all')
-  const visible = tab === 'all' ? articles : articles.filter((a) => a.category === tab)
+  const [filter, setFilter] = useState<FilterState>(emptyFilterState)
+  const filters = useMemo(() => toFeedFilters(filter), [filter])
+  const onChange = useCallback((next: FilterState) => setFilter(next), [])
+  const [status, setStatus] = useState<ConnectionStatus>('connecting')
 
   return (
     <aside className="feed-panel" aria-label="실시간 뉴스 피드">
@@ -38,71 +39,11 @@ export function FeedPanel({
             {status === 'connected' ? 'LIVE' : '연결 중'}
           </span>
         </div>
-        <div className="feed-panel__tabs" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              className={`chip${tab === t ? ' chip--on' : ''}`}
-              onClick={() => setTab(t)}
-            >
-              {t === 'all' ? '전체' : CATEGORY_LABELS[t]}
-            </button>
-          ))}
-        </div>
+        <FeedFilterBar value={filter} onChange={onChange} compact />
       </div>
 
-      <div className="feed-panel__list">
-        {error && (
-          <div className="feed-panel__error" role="alert">
-            <span>{error}</span>
-            <button type="button" onClick={() => void retry()}>
-              다시 시도
-            </button>
-          </div>
-        )}
-        {loading && <p className="feed-panel__empty">기사를 불러오는 중…</p>}
-        {!loading && visible.length === 0 && !error && <p className="feed-panel__empty">이 카테고리의 기사가 아직 없습니다</p>}
-
-        {visible.map((article) => (
-          <article
-            key={article.id}
-            className={`feed-item${highlighted.has(article.id) ? ' feed-item--new' : ''}`}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(ARTICLE_DRAG_TYPE, JSON.stringify(article))
-              e.dataTransfer.effectAllowed = 'copy'
-            }}
-          >
-            <div className="feed-item__meta-row">
-              <span className="feed-item__cat">{CATEGORY_LABELS[article.category] ?? article.category}</span>
-              {highlighted.has(article.id) && <span className="feed-item__new">NEW</span>}
-              <button type="button" className="feed-item__add" onClick={() => onAdd(article)} title="보드 가운데에 추가">
-                + 보드에
-              </button>
-            </div>
-            <a className="feed-item__title" href={article.originalLink} target="_blank" rel="noopener noreferrer" draggable={false}>
-              {article.title}
-            </a>
-            <div className="feed-item__meta">
-              {article.source} · {formatRelativeTime(article.publishedAt, now)}
-            </div>
-          </article>
-        ))}
-
-        {moreError && (
-          <p className="feed-panel__error" role="alert">
-            {moreError}
-          </p>
-        )}
-        {hasMore && tab === 'all' && visible.length > 0 && (
-          <button type="button" className="feed-panel__more" onClick={() => void loadMore()} disabled={loadingMore}>
-            {loadingMore ? '불러오는 중…' : moreError ? '다시 시도' : '이전 기사 더 보기'}
-          </button>
-        )}
-      </div>
+      {/* 조건이 바뀌면 목록을 새로 만든다 — 이전 조건의 늦은 응답이 섞이지 않도록 */}
+      <PanelList key={JSON.stringify(filters)} filters={filters} onAdd={onAdd} onStatus={setStatus} now={now} />
 
       {/* 피드가 길어도 항상 보이도록 목록 아래에 고정 */}
       <div className="feed-panel__link">
@@ -110,6 +51,75 @@ export function FeedPanel({
       </div>
       <div className="feed-panel__foot">카드를 오른쪽 보드로 끌어다 놓으세요</div>
     </aside>
+  )
+}
+
+function PanelList({
+  filters,
+  onAdd,
+  onStatus,
+  now,
+}: {
+  filters: FeedFilters
+  onAdd: (article: FeedArticle) => void
+  onStatus: (status: ConnectionStatus) => void
+  now: Date
+}) {
+  const { articles, status, loading, error, highlighted, hasMore, loadMore, loadingMore, moreError, retry } = useNewsFeed(filters)
+  useEffect(() => onStatus(status), [status, onStatus])
+
+  return (
+    <div className="feed-panel__list">
+      {error && (
+        <div className="feed-panel__error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => void retry()}>
+            다시 시도
+          </button>
+        </div>
+      )}
+      {loading && <p className="feed-panel__empty">기사를 불러오는 중…</p>}
+      {!loading && articles.length === 0 && !error && (
+        <p className="feed-panel__empty">{hasFilters(filters) ? '조건에 맞는 기사가 없습니다' : '아직 수집된 기사가 없습니다'}</p>
+      )}
+
+      {articles.map((article) => (
+        <article
+          key={article.id}
+          className={`feed-item${highlighted.has(article.id) ? ' feed-item--new' : ''}`}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(ARTICLE_DRAG_TYPE, JSON.stringify(article))
+            e.dataTransfer.effectAllowed = 'copy'
+          }}
+        >
+          <div className="feed-item__meta-row">
+            <span className="feed-item__cat">{CATEGORY_LABELS[article.category] ?? article.category}</span>
+            {highlighted.has(article.id) && <span className="feed-item__new">NEW</span>}
+            <button type="button" className="feed-item__add" onClick={() => onAdd(article)} title="보드 가운데에 추가">
+              + 보드에
+            </button>
+          </div>
+          <a className="feed-item__title" href={article.originalLink} target="_blank" rel="noopener noreferrer" draggable={false}>
+            {article.title}
+          </a>
+          <div className="feed-item__meta">
+            {article.source} · {formatRelativeTime(article.publishedAt, now)}
+          </div>
+        </article>
+      ))}
+
+      {moreError && (
+        <p className="feed-panel__error" role="alert">
+          {moreError}
+        </p>
+      )}
+      {hasMore && articles.length > 0 && (
+        <button type="button" className="feed-panel__more" onClick={() => void loadMore()} disabled={loadingMore}>
+          {loadingMore ? '불러오는 중…' : moreError ? '다시 시도' : '이전 기사 더 보기'}
+        </button>
+      )}
+    </div>
   )
 }
 

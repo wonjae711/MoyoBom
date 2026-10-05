@@ -67,6 +67,30 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('[F-04] 검색·필터', () => {
+  it('모든 조회에 같은 조건을 붙이고, 실시간 기사도 조건에 맞는 것만 보여 준다', async () => {
+    const fetchMock = serve(() => json(page([article('1')])))
+    const { result } = renderHook(() => useNewsFeed({ q: '반도체', category: 'economy' }))
+    act(() => fakeSocket.fire('connect'))
+    await flush()
+    const url = String(fetchMock.mock.calls[0]![0])
+    expect(url).toContain('q=%EB%B0%98%EB%8F%84%EC%B2%B4')
+    expect(url).toContain('category=economy')
+
+    act(() =>
+      fakeSocket.fire('feed:new-articles', {
+        truncated: false,
+        total: 2,
+        articles: [
+          { ...article('8'), title: '반도체 수출 호조' },
+          { ...article('7'), title: '프로야구 순위' },
+        ],
+      }),
+    )
+    expect(result.current.articles.map((a) => a.id)).toEqual(['8', '1'])
+  })
+})
+
 describe('[L-07] 이전 기사 더 보기 실패에서 회복', () => {
   it('더 보기가 실패하면 그 오류만 따로 보이고, 다시 시도하면 같은 페이지를 실제로 다시 받는다', async () => {
     const first: FeedPage = { articles: [article('9')], nextCursor: 'cursor-9', collectedCursor: '100_9' }

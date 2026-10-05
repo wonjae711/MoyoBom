@@ -15,8 +15,8 @@
 }
 
 .feed__title {
-  margin: 0;
-  font-family: Georgia, 'Noto Serif KR', 'Nanum Myeongjo', serif;
+  margin: 0 0 14px;
+  font-family: var(--font-serif);
   font-size: 1.5rem;
 }
 
@@ -171,5 +171,19 @@
   color: var(--color-black);
   font: inherit;
   font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.feed__count {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.feed__reset {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
   cursor: pointer;
 }

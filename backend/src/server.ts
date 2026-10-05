@@ -5,7 +5,7 @@ import { LoginRateLimiter } from './auth/rateLimit.js';
 import { AuthService } from './auth/service.js';
 import { loadEnv } from './config/env.js';
 import { createPool, pingDb } from './db/pool.js';
-import { listFeed } from './news/feed.js';
+import { listFeed, listSources } from './news/feed.js';
 import { NewsEvents, createNewsCollector, startNewsSchedule } from './news/index.js';
 import { attachSocketAuth } from './realtime/auth.js';
 import { attachNewsFeed } from './realtime/newsFeed.js';
@@ -53,7 +53,7 @@ const links = new LinkService({
 });
 const app = createApp({
   checkDb: () => pingDb(pool),
-  articles: { listFeed: (query) => listFeed(pool, query) },
+  articles: { listFeed: (query) => listFeed(pool, query), listSources: () => listSources(pool) },
   auth: { auth: authService, loginLimiter: new LoginRateLimiter(), jwtSecret: env.JWT_SECRET, cookies },
   oauth: {
     auth: authService,
