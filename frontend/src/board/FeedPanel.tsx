@@ -24,7 +24,7 @@ export function FeedPanel({
   linkRemaining: number | null
   now: Date
 }) {
-  const { articles, status, loading, error, highlighted, hasMore, loadMore, retry } = useNewsFeed()
+  const { articles, status, loading, error, highlighted, hasMore, loadMore, loadingMore, moreError, retry } = useNewsFeed()
   const [tab, setTab] = useState<'all' | CategoryCode>('all')
   const visible = tab === 'all' ? articles : articles.filter((a) => a.category === tab)
 
@@ -92,9 +92,14 @@ export function FeedPanel({
           </article>
         ))}
 
+        {moreError && (
+          <p className="feed-panel__error" role="alert">
+            {moreError}
+          </p>
+        )}
         {hasMore && tab === 'all' && visible.length > 0 && (
-          <button type="button" className="feed-panel__more" onClick={() => void loadMore()}>
-            이전 기사 더 보기
+          <button type="button" className="feed-panel__more" onClick={() => void loadMore()} disabled={loadingMore}>
+            {loadingMore ? '불러오는 중…' : moreError ? '다시 시도' : '이전 기사 더 보기'}
           </button>
         )}
       </div>

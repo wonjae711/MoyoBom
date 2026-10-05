@@ -21,7 +21,7 @@ function useNow(intervalMs = 60_000): Date {
 }
 
 export function NewsFeed() {
-  const { articles, status, loading, error, highlighted, hasMore, loadMore, retry } = useNewsFeed()
+  const { articles, status, loading, error, highlighted, hasMore, loadMore, loadingMore, moreError, retry } = useNewsFeed()
   const now = useNow()
 
   return (
@@ -65,9 +65,14 @@ export function NewsFeed() {
         ))}
       </ul>
 
+      {moreError && (
+        <p className="feed__error" role="alert">
+          {moreError}
+        </p>
+      )}
       {hasMore && articles.length > 0 && (
-        <button type="button" className="feed__more" onClick={() => void loadMore()}>
-          이전 기사 더 보기
+        <button type="button" className="feed__more" onClick={() => void loadMore()} disabled={loadingMore}>
+          {loadingMore ? '불러오는 중…' : moreError ? '다시 시도' : '이전 기사 더 보기'}
         </button>
       )}
     </section>

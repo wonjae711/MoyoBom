@@ -44,7 +44,10 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 /** 응답을 차례로 꺼내 주는 fetch */
 function serve(...responses: (() => Response)[]) {
-  const fn = vi.fn(async () => responses.shift()!())
+  const fn = vi.fn(async (input: RequestInfo | URL) => {
+    void input
+    return responses.shift()!()
+  })
   vi.stubGlobal('fetch', fn)
   return fn
 }
@@ -62,6 +65,38 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+describe('[L-07] 이전 기사 더 보기 실패에서 회복', () => {
+  it('더 보기가 실패하면 그 오류만 따로 보이고, 다시 시도하면 같은 페이지를 실제로 다시 받는다', async () => {
+    const first: FeedPage = { articles: [article('9')], nextCursor: 'cursor-9', collectedCursor: '100_9' }
+    const older: FeedPage = { articles: [article('5')], nextCursor: null, collectedCursor: null }
+    const fetchMock = serve(
+      () => json(first),
+      () => json({ error: '서버 오류' }, 500),
+      () => json(older),
+    )
+    const { result } = renderHook(() => useNewsFeed())
+    act(() => fakeSocket.fire('connect'))
+    await flush()
+
+    await act(async () => {
+      await result.current.loadMore()
+    })
+    expect(result.current.moreError).toBe('서버 오류')
+    expect(result.current.error).toBeNull() // 피드 전체 오류와는 따로
+    expect(result.current.hasMore).toBe(true)
+
+    await act(async () => {
+      await result.current.loadMore()
+    })
+    const calls = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(calls[1]).toContain('before=cursor-9')
+    expect(calls[2]).toContain('before=cursor-9') // 실패한 바로 그 페이지를 다시 요청
+    expect(result.current.moreError).toBeNull()
+    expect(result.current.articles.map((a) => a.id)).toEqual(['9', '5'])
+    expect(result.current.hasMore).toBe(false)
+  })
 })
 
 describe('[L-03] 피드 조회 실패에서 회복', () => {

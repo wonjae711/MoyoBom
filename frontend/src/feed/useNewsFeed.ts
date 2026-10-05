@@ -44,6 +44,10 @@ export function useNewsFeed() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set())
+  /** "이전 기사 더 보기" 실패 (L-07). 피드 전체 오류와 따로 두어, 다시 시도가 실패한 그 페이지를 다시 받게 한다 */
+  const [moreError, setMoreError] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadingMoreRef = useRef(false)
   const initialized = useRef(false)
   // 비동기 콜백에서 최신 목록을 읽기 위한 사본 (상태 업데이트 함수 안에서는 부수효과를 내지 않는다)
   const articlesRef = useRef<FeedArticle[]>([])
@@ -155,14 +159,24 @@ export function useNewsFeed() {
     return sync()
   }, [sync])
 
+  /**
+   * 이전 기사 더 보기. 실패하면 커서를 그대로 두므로 다시 부르면 같은 페이지를 다시 요청한다 (L-07).
+   * 이미 받는 중이면 겹쳐 보내지 않는다
+   */
   const loadMore = useCallback(async () => {
-    if (!nextCursor) return
+    if (!nextCursor || loadingMoreRef.current) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
     try {
       const page = await fetchFeed(nextCursor)
       setArticles((prev) => mergeArticles(prev, page.articles))
       setNextCursor(page.nextCursor)
+      setMoreError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '이전 기사를 불러오지 못했습니다')
+      setMoreError(e instanceof Error ? e.message : '이전 기사를 불러오지 못했습니다')
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
     }
   }, [nextCursor])
 
@@ -209,5 +223,16 @@ export function useNewsFeed() {
     }
   }, [sync, markGap, highlight, clearRetry])
 
-  return { articles, status, loading, error, highlighted, hasMore: nextCursor !== null, loadMore, retry }
+  return {
+    articles,
+    status,
+    loading,
+    error,
+    highlighted,
+    hasMore: nextCursor !== null,
+    loadMore,
+    loadingMore,
+    moreError,
+    retry,
+  }
 }
