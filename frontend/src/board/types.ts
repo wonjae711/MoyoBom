@@ -11,6 +11,8 @@ export interface BoardSummary {
   memberCount: number
   itemCount: number
   updatedAt: string
+  /** 목록 미리보기용 카드 배치 (위에 있는 카드부터 최대 10장) */
+  thumb: { x: number; y: number; type: ItemType }[]
 }
 
 export interface BoardMember {

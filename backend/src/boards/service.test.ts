@@ -57,6 +57,9 @@ describe.skipIf(!testDatabaseUrl)('BoardService (DB)', () => {
         [invited, 'editor'],
       ]);
       expect(list[0]?.itemCount).toBe(1);
+      // 목록 미리보기용 카드 배치 (B3): 좌표와 종류만
+      expect(list[0]?.thumb).toEqual([{ x: 0, y: 0, type: 'memo' }]);
+      expect(list[1]?.thumb).toEqual([]);
     });
 
     it('멤버가 아니면 보드가 있어도 없는 것처럼 답한다 (not_found)', async () => {

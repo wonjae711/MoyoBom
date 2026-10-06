@@ -523,3 +523,28 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ---------- 모달 안 폼 ---------- */
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.dialog-form__required {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.dialog-form__hint {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.dialog-text {
+  margin: 0;
+  color: var(--fg-text-body);
+  line-height: 1.6;
+}

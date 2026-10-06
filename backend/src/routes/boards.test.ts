@@ -61,7 +61,7 @@ describe.skipIf(!testDatabaseUrl)('보드 API (DB)', () => {
     expect(detail.body).toMatchObject({ role: 'owner', items: [], members: [{ nickname: '주인', role: 'owner' }] });
   });
 
-  it.each([[''], ['   '], ['가'.repeat(51)]])('보드 이름이 비었거나 너무 길면 400 (%#)', async (title) => {
+  it.each([[''], ['   '], ['가'.repeat(41)]])('보드 이름이 비었거나 너무 길면 400 (%#)', async (title) => {
     const res = await request(app).post('/api/boards').set('Cookie', owner.cookie).send({ title });
     expect(res.status).toBe(400);
   });

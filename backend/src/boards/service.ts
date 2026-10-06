@@ -10,6 +10,7 @@ import {
   type BoardRole,
   type BoardSnapshot,
   type BoardSummary,
+  type BoardThumbItem,
   type ItemType,
 } from './types.js';
 
@@ -165,10 +166,14 @@ export class BoardService {
       member_count: number;
       item_count: number;
       updated_at: Date;
+      thumb: BoardThumbItem[] | null;
     }>(
       `SELECT b.id, b.title, m.role, b.updated_at,
          (SELECT count(*)::int FROM board_members WHERE board_id = b.id) AS member_count,
-         (SELECT count(*)::int FROM board_items WHERE board_id = b.id) AS item_count
+         (SELECT count(*)::int FROM board_items WHERE board_id = b.id) AS item_count,
+         (SELECT json_agg(json_build_object('x', t.position_x, 'y', t.position_y, 'type', t.item_type))
+            FROM (SELECT position_x, position_y, item_type FROM board_items
+                  WHERE board_id = b.id ORDER BY z_index DESC, id DESC LIMIT 10) t) AS thumb
        FROM board_members m JOIN boards b ON b.id = m.board_id
        WHERE m.user_id = $1
        ORDER BY b.updated_at DESC, b.id DESC`,
@@ -181,6 +186,7 @@ export class BoardService {
       memberCount: r.member_count,
       itemCount: r.item_count,
       updatedAt: r.updated_at.toISOString(),
+      thumb: r.thumb ?? [],
     }));
   }
 
@@ -196,7 +202,7 @@ export class BoardService {
         board.id,
         userId,
       ]);
-      return { id: board.id, title, role: 'owner', memberCount: 1, itemCount: 0, updatedAt: board.updated_at.toISOString() };
+      return { id: board.id, title, role: 'owner', memberCount: 1, itemCount: 0, updatedAt: board.updated_at.toISOString(), thumb: [] };
     });
   }
 

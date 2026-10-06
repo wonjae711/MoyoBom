@@ -11,7 +11,7 @@ import { AnswerError } from '../ai/answerer.js';
 import type { QaService } from '../qa/service.js';
 import type { BoardNotifier } from '../realtime/boardSync.js';
 
-const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요').max(50) });
+const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요.').max(40, '보드 이름은 40자 이내로 입력해 주세요.') });
 const isId = (value: string) => /^\d+$/.test(value);
 
 const STATUS: Record<BoardErrorCode, number> = { not_found: 404, forbidden: 403, invalid: 400, invite_invalid: 404 };
