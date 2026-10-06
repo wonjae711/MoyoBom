@@ -22,16 +22,17 @@ describe('[F-04] 검색·필터 규칙 (서버와 같은 규칙)', () => {
   })
 
   it('카테고리·언론사·기간(한국 시간 시작일 0시 이후)을 함께 본다', () => {
-    expect(matchesFilters(article(), { category: 'economy', source: '한겨레', from: '2026-10-05' })).toBe(true)
+    expect(matchesFilters(article(), { category: 'economy', sources: ['한겨레'], from: '2026-10-05' })).toBe(true)
     expect(matchesFilters(article(), { category: 'sports' })).toBe(false)
-    expect(matchesFilters(article(), { source: '조선일보' })).toBe(false)
+    expect(matchesFilters(article(), { sources: ['조선일보', 'KBS'] })).toBe(false)
     expect(matchesFilters(article({ publishedAt: '2026-10-04T14:59:00.000Z' }), { from: '2026-10-05' })).toBe(false)
   })
 
   it('요청 주소에는 정리된 조건만 붙고, 빈 조건은 조건 없음으로 본다', () => {
-    expect(filterParams({ q: '  수출,  규제 ', category: 'economy' })).toEqual({ q: '수출 규제', category: 'economy' })
+    expect(filterParams({ q: '  수출,  규제 ', category: 'economy' })).toEqual([['q', '수출 규제'], ['category', 'economy']])
+    expect(filterParams({ sources: ['한겨레', 'KBS'] })).toEqual([['source', '한겨레'], ['source', 'KBS']])
     expect(hasFilters({ q: '   ' })).toBe(false)
-    expect(toFeedFilters({ q: ' ', period: 'all' })).toEqual({})
+    expect(toFeedFilters({ q: ' ', sources: [], period: 'all' })).toEqual({})
   })
 
   it('기간 선택은 오늘을 포함한 시작 날짜로 바뀐다', () => {

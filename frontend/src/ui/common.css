@@ -548,3 +548,11 @@
   color: var(--fg-text-body);
   line-height: 1.6;
 }
+
+/* 머리글 + 스크롤되는 본문 화면 */
+.page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

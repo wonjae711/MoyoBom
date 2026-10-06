@@ -1,10 +1,11 @@
 import type { CategoryCode, FeedArticle } from './types'
 
-/** 피드 검색·필터 조건 (F-04). 서버 GET /api/articles의 q·category·source·from·to와 같다 */
+/** 피드 검색·필터 조건 (F-04). 서버 GET /api/articles의 q·category·source(여러 개)·from·to와 같다 */
 export interface FeedFilters {
   q?: string
   category?: CategoryCode
-  source?: string
+  /** 언론사 여러 곳 중 하나 (B4) */
+  sources?: string[]
   /** 발행일 시작 (YYYY-MM-DD, 한국 시간) */
   from?: string
 }
@@ -37,17 +38,17 @@ export function searchTerms(q: string | undefined): string[] {
 }
 
 export function hasFilters(filters: FeedFilters): boolean {
-  return Boolean(searchTerms(filters.q).length || filters.category || filters.source || filters.from)
+  return Boolean(searchTerms(filters.q).length || filters.category || filters.sources?.length || filters.from)
 }
 
-/** 요청 주소에 붙일 조건 */
-export function filterParams(filters: FeedFilters): Record<string, string> {
-  const params: Record<string, string> = {}
+/** 요청 주소에 붙일 조건 — 언론사는 source=를 여러 번 붙인다 */
+export function filterParams(filters: FeedFilters): [string, string][] {
+  const params: [string, string][] = []
   const q = searchTerms(filters.q).join(' ')
-  if (q) params.q = q
-  if (filters.category) params.category = filters.category
-  if (filters.source) params.source = filters.source
-  if (filters.from) params.from = filters.from
+  if (q) params.push(['q', q])
+  if (filters.category) params.push(['category', filters.category])
+  for (const source of filters.sources ?? []) params.push(['source', source])
+  if (filters.from) params.push(['from', filters.from])
   return params
 }
 
@@ -57,7 +58,7 @@ export function filterParams(filters: FeedFilters): Record<string, string> {
  */
 export function matchesFilters(article: FeedArticle, filters: FeedFilters): boolean {
   if (filters.category && article.category !== filters.category) return false
-  if (filters.source && article.source !== filters.source) return false
+  if (filters.sources?.length && !filters.sources.includes(article.source)) return false
   if (filters.from && Date.parse(article.publishedAt) < Date.parse(`${filters.from}T00:00:00+09:00`)) return false
   const text = `${article.title} ${article.description}`.toLowerCase()
   return searchTerms(filters.q).every((term) => text.includes(term.toLowerCase()))
@@ -67,18 +68,18 @@ export function matchesFilters(article: FeedArticle, filters: FeedFilters): bool
 export interface FilterState {
   q: string
   category?: CategoryCode
-  source?: string
+  sources: string[]
   period: Period
 }
 
-export const emptyFilterState = (): FilterState => ({ q: '', period: 'all' })
+export const emptyFilterState = (): FilterState => ({ q: '', sources: [], period: 'all' })
 
 /** 화면의 선택 상태 → 조회 조건 */
 export function toFeedFilters(state: FilterState): FeedFilters {
   return {
     ...(state.q.trim() ? { q: state.q.trim() } : {}),
     ...(state.category ? { category: state.category } : {}),
-    ...(state.source ? { source: state.source } : {}),
+    ...(state.sources.length ? { sources: [...state.sources].sort() } : {}),
     ...(periodStart(state.period) ? { from: periodStart(state.period) } : {}),
   }
 }

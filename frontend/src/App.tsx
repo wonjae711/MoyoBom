@@ -45,10 +45,10 @@ function App() {
             path="/feed"
             element={
               <RequireAuth>
-                <AppHeader />
-                <main>
+                <div className="page">
+                  <AppHeader />
                   <NewsFeed />
-                </main>
+                </div>
               </RequireAuth>
             }
           />
@@ -56,8 +56,10 @@ function App() {
             path="/digests"
             element={
               <RequireAuth>
-                <AppHeader />
-                <DigestPage />
+                <div className="page">
+                  <AppHeader />
+                  <DigestPage />
+                </div>
               </RequireAuth>
             }
           />

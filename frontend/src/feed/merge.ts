@@ -32,3 +32,15 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
   const date = new Date(iso)
   return `${date.getMonth() + 1}월 ${date.getDate()}일`
 }
+
+/** "10월 4일 09:12" (한국 시간) */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}

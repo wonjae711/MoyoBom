@@ -16,13 +16,13 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
 // 로그인이 만료됐으면 apiFetch가 토큰 갱신 후 다시 요청하고, 그래도 실패하면 로그인 화면으로 보낸다
 function fetchFeed(filters: FeedFilters, before?: string): Promise<FeedPage> {
-  const params = new URLSearchParams({ limit: String(PAGE_SIZE), ...filterParams(filters) })
+  const params = new URLSearchParams([['limit', String(PAGE_SIZE)], ...filterParams(filters)])
   if (before) params.set('before', before)
   return apiFetch<FeedPage>(`/api/articles?${params}`)
 }
 
 function fetchCollectedAfter(filters: FeedFilters, cursor: string): Promise<FeedPage> {
-  const params = new URLSearchParams({ limit: String(CATCH_UP_PAGE_SIZE), collectedAfter: cursor, ...filterParams(filters) })
+  const params = new URLSearchParams([['limit', String(CATCH_UP_PAGE_SIZE)], ['collectedAfter', cursor], ...filterParams(filters)])
   return apiFetch<FeedPage>(`/api/articles?${params}`)
 }
 
@@ -40,9 +40,13 @@ const earlierCursor = (a: string | null, b: string | null) => (laterCursor(a, b)
  * - 검색·필터 (F-04): 모든 조회에 같은 조건을 붙이고, 실시간 기사도 같은 조건으로 거른다.
  *   조건은 처음 받은 값으로 고정된다 — 조건을 바꾸려면 이 훅을 쓰는 컴포넌트를 key로 새로 만든다
  *   (이전 조건의 응답이 늦게 도착해 섞이는 일이 없도록)
+ * - holdNew (B5, 뉴스 화면): 새로 받은 기사를 바로 끼워 넣지 않고 대기 목록(pending)에 두었다가
+ *   사용자가 "↑ 새 기사 N건"을 누를 때(showPending) 맨 위에 넣는다 — 읽던 위치가 밀리지 않게
  */
-export function useNewsFeed(initialFilters: FeedFilters = {}) {
+export function useNewsFeed(initialFilters: FeedFilters = {}, options: { holdNew?: boolean } = {}) {
   const [filters] = useState(initialFilters)
+  const [holdNew] = useState(options.holdNew ?? false)
+  const [pending, setPending] = useState<FeedArticle[]>([])
   const [articles, setArticles] = useState<FeedArticle[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
@@ -80,6 +84,34 @@ export function useNewsFeed(initialFilters: FeedFilters = {}) {
     }, HIGHLIGHT_MS)
   }, [])
 
+  /** 새로 받은 기사: 바로 합치거나(강조 표시) 대기 목록에 둔다 */
+  const receive = useCallback(
+    (incoming: FeedArticle[]) => {
+      const known = new Set(articlesRef.current.map((a) => a.id))
+      const fresh = incoming.filter((a) => !known.has(a.id))
+      if (holdNew) {
+        if (fresh.length) setPending((prev) => mergeArticles(prev, fresh))
+        return
+      }
+      setArticles((prev) => mergeArticles(prev, incoming))
+      highlight(fresh.map((a) => a.id))
+    },
+    [holdNew, highlight],
+  )
+
+  /** "↑ 새 기사 N건": 대기 중인 기사를 맨 위에 넣고 강조한다 */
+  const pendingRef = useRef<FeedArticle[]>([])
+  useEffect(() => {
+    pendingRef.current = pending
+  }, [pending])
+  const showPending = useCallback(() => {
+    const list = pendingRef.current
+    if (list.length === 0) return
+    setPending([])
+    setArticles((prev) => mergeArticles(prev, list))
+    highlight(list.map((a) => a.id))
+  }, [highlight])
+
   const markGap = useCallback(() => {
     if (gapFrom.current === undefined) gapFrom.current = collected.current
   }, [])
@@ -107,19 +139,18 @@ export function useNewsFeed(initialFilters: FeedFilters = {}) {
       const result = await catchUp((cursor) => fetchCollectedAfter(filters, cursor), catchUpStart(from))
       if (!result.complete) {
         setHighlighted(new Set())
+        setPending([])
         await loadLatest(true)
         return
       }
-      const known = new Set(articlesRef.current.map((a) => a.id))
-      setArticles((prev) => mergeArticles(prev, result.articles))
-      highlight(result.articles.filter((a) => !known.has(a.id)).map((a) => a.id))
+      receive(result.articles)
       collected.current = laterCursor(collected.current, result.reached)
     } catch (e) {
       // 실패하면 놓친 구간을 되살려 다음 시도(자동 재시도·다시 시도·재연결) 때 다시 받는다
       gapFrom.current = gapFrom.current === undefined ? from : earlierCursor(from, gapFrom.current)
       throw e
     }
-  }, [loadLatest, highlight, filters])
+  }, [loadLatest, receive, filters])
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current) clearTimeout(retryTimer.current)
@@ -221,15 +252,14 @@ export function useNewsFeed(initialFilters: FeedFilters = {}) {
       for (const article of payload.articles) collected.current = laterCursor(collected.current, cursorOf(article))
       const matched = payload.articles.filter((a) => matchesFilters(a, filters))
       if (matched.length === 0) return
-      setArticles((prev) => mergeArticles(prev, matched))
-      highlight(matched.map((a) => a.id))
+      receive(matched)
     })
 
     return () => {
       clearRetry()
       socket.disconnect()
     }
-  }, [sync, markGap, highlight, clearRetry, filters])
+  }, [sync, markGap, receive, clearRetry, filters])
 
   return {
     articles,
@@ -242,5 +272,7 @@ export function useNewsFeed(initialFilters: FeedFilters = {}) {
     loadingMore,
     moreError,
     retry,
+    pending,
+    showPending,
   }
 }

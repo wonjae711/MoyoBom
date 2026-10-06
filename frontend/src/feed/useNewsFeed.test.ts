@@ -91,6 +91,24 @@ describe('[F-04] 검색·필터', () => {
   })
 })
 
+describe('[B5] 새 기사 대기 (뉴스 화면)', () => {
+  it('holdNew면 새 기사를 바로 끼워 넣지 않고 모아 두었다가, showPending 때 맨 위에 넣고 강조한다', async () => {
+    serve(() => json(page([article('1')])))
+    const { result } = renderHook(() => useNewsFeed({}, { holdNew: true }))
+    act(() => fakeSocket.fire('connect'))
+    await flush()
+
+    act(() => fakeSocket.fire('feed:new-articles', { truncated: false, total: 2, articles: [article('3'), article('2')] }))
+    expect(result.current.articles.map((a) => a.id)).toEqual(['1'])
+    expect(result.current.pending.map((a) => a.id)).toEqual(['3', '2'])
+
+    act(() => result.current.showPending())
+    expect(result.current.articles.map((a) => a.id)).toEqual(['3', '2', '1'])
+    expect(result.current.pending).toEqual([])
+    expect([...result.current.highlighted].sort()).toEqual(['2', '3'])
+  })
+})
+
 describe('[L-07] 이전 기사 더 보기 실패에서 회복', () => {
   it('더 보기가 실패하면 그 오류만 따로 보이고, 다시 시도하면 같은 페이지를 실제로 다시 받는다', async () => {
     const first: FeedPage = { articles: [article('9')], nextCursor: 'cursor-9', collectedCursor: '100_9' }

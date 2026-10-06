@@ -1,59 +1,152 @@
-/* 기사 검색·필터 (F-04) — 디자인 목업 "뉴스 피드"의 검색창·카테고리 칩 */
+/* 기사 검색·필터 (F-04) — 보라 테마 프로토타입 */
 
 .filter-bar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
 }
 
 .filter-bar--compact {
+  gap: 10px;
+}
+
+.filter-bar__row {
+  display: flex;
   gap: 8px;
-  margin-bottom: 0;
 }
 
 .filter-bar__search {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-gray-light);
-  border-radius: 7px;
-  background: var(--color-white);
+  flex: 1;
+}
+
+.filter-bar:not(.filter-bar--compact) .filter-bar__search .input {
+  height: 42px;
+}
+
+.filter-bar__pop {
+  position: relative;
+}
+
+.filter-bar__toggle {
+  height: 42px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.filter-bar__toggle--on,
+.filter-bar__toggle--on:hover:not(:disabled) {
+  border-color: var(--line-primary);
+  background: var(--bg-primary-soft);
+  color: var(--fg-primary-ink);
+}
+
+.filter-bar__panel {
+  position: absolute;
+  right: 0;
+  top: 50px;
+  z-index: 30;
+  width: 300px;
+  max-height: 420px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--line-border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-menu);
+}
+
+.filter-bar__panel fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.filter-bar__panel legend {
+  margin-bottom: 6px;
   font-size: 13px;
-  outline: none;
+  font-weight: 700;
+  color: var(--fg-text-2);
 }
 
-.filter-bar--compact .filter-bar__search {
-  padding: 7px 9px;
-  border-radius: 5px;
-  font-size: 11.5px;
+.filter-bar__panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  font-size: 14px;
 }
 
-.filter-bar__search:focus {
-  border-color: var(--color-black);
+.filter-bar__panel input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--fg-primary);
+}
+
+.filter-bar__options {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-bar__none {
+  font-size: 13px;
+  color: var(--fg-muted);
 }
 
 .filter-bar__chips {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
-.filter-bar:not(.filter-bar--compact) .chip {
-  padding: 7px 13px;
-  border-radius: 6px;
-  font-size: 12.5px;
+.filter-bar:not(.filter-bar--compact) .filter-bar__chips .chip {
+  height: 34px;
+  padding: 0 13px;
+  font-size: 14px;
+  border-color: var(--line-border);
+  color: var(--fg-text-body);
 }
 
-.filter-bar__selects {
+.filter-bar:not(.filter-bar--compact) .filter-bar__chips .chip--on {
+  border-color: var(--line-primary);
+  color: var(--fg-surface);
+}
+
+.filter-bar__active {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
 }
 
-.filter-bar__selects select {
-  padding: 7px 10px;
-  border: 1px solid var(--color-gray-light);
-  border-radius: 6px;
-  background: var(--color-white);
-  font-size: 12.5px;
-  color: var(--color-black);
+.filter-bar__active > span {
+  color: var(--fg-text-2);
+}
+
+.filter-bar__active-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--line-border-strong);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font-size: 13px;
+}
+
+.filter-bar__active-chip svg {
+  color: var(--fg-text-2);
+}
+
+.filter-bar__reset {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
 }

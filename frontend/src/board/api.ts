@@ -138,3 +138,35 @@ export function askQuota(boardId: string): Promise<number> {
 }
 
 export const inviteUrl = (token: string) => `${window.location.origin}/invite/${token}`
+
+/** 뉴스 화면에서 보드를 골라 기사 추가 (B7): 그 보드의 맨 아래 왼쪽에 놓인다 */
+export function addArticleToBoard(boardId: string, articleId: string): Promise<BoardItem> {
+  return apiFetch<{ item: BoardItem }>(`/api/boards/${boardId}/articles`, {
+    method: 'POST',
+    body: JSON.stringify({ articleId }),
+  }).then((r) => r.item)
+}
+
+export interface LinkPreview {
+  article: { id: string; title: string; description: string; source: string; publishedAt: string | null }
+  /** 이미 저장된 기사를 다시 씀 (AI 호출 없음) */
+  reused: boolean
+  /** AI로 요약함 (false면 페이지 설명을 그대로 씀) */
+  summarized: boolean
+  /** 이미 이 보드에 있는 기사 */
+  onBoard: boolean
+  remaining: number
+}
+
+/** 링크 요약 미리보기 (B12): 카드는 만들지 않는다 */
+export function previewLink(boardId: string, url: string): Promise<LinkPreview> {
+  return apiFetch<LinkPreview>(`/api/boards/${boardId}/links/preview`, { method: 'POST', body: JSON.stringify({ url }) })
+}
+
+/** 미리보기 확인 후 "보드에 추가" */
+export function confirmLink(boardId: string, url: string, x: number, y: number): Promise<BoardItem> {
+  return apiFetch<{ item: BoardItem }>(`/api/boards/${boardId}/links/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ url, x, y }),
+  }).then((r) => r.item)
+}
