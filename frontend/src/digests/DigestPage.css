@@ -1,8 +1,10 @@
 /* 뉴스 다이제스트 (F-09) — 보드 목록 화면과 같은 여백·글꼴 */
 
 .digests {
-  min-height: calc(100vh - 64px);
-  background: var(--color-off-white);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-app);
 }
 
 .digests__body {
@@ -17,15 +19,15 @@
 
 .digests__title {
   margin: 0;
-  font-size: 27px;
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.02em;
 }
 
 .digests__sub {
   margin: 7px 0 0;
   font-size: 12.5px;
-  color: var(--color-gray-mid);
+  color: var(--fg-muted);
 }
 
 .digests__error {
@@ -34,8 +36,8 @@
   justify-content: space-between;
   margin-bottom: 18px;
   padding: 10px 12px;
-  border-left: 3px solid var(--color-black);
-  background: var(--color-white);
+  border-left: 3px solid var(--line-error);
+  background: var(--bg-surface);
   font-size: 12.5px;
 }
 
@@ -67,7 +69,7 @@
 
 .digests__section-head span {
   font-size: 11.5px;
-  color: var(--color-gray-mid);
+  color: var(--fg-muted);
 }
 
 .digests__subs,
@@ -80,11 +82,11 @@
 .digests__empty {
   margin: 0;
   padding: 18px;
-  border: 1px dashed var(--color-gray-light);
+  border: 1px dashed var(--line-border);
   border-radius: 8px;
-  background: var(--color-white);
+  background: var(--bg-surface);
   font-size: 12.5px;
-  color: var(--color-gray-mid);
+  color: var(--fg-muted);
 }
 
 .digests__add,
@@ -96,9 +98,9 @@
 .sub-form,
 .digest-card {
   padding: 14px 16px;
-  border: 1px solid var(--color-gray-light);
-  border-radius: 10px;
-  background: var(--color-white);
+  border: 1px solid var(--line-border);
+  border-radius: 12px;
+  background: var(--bg-surface);
 }
 
 .sub-card--off {
@@ -113,7 +115,7 @@
 .sub-card__when {
   margin-top: 3px;
   font-size: 11.5px;
-  color: var(--color-gray-mid);
+  color: var(--fg-muted);
 }
 
 .sub-card__actions {
@@ -129,7 +131,7 @@
   border: none;
   background: none;
   font-size: 11.5px;
-  color: var(--color-gray-dark);
+  color: var(--fg-text-2);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -138,13 +140,13 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-color: var(--color-black);
+  border-color: var(--line-primary);
 }
 
 .sub-form__label {
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--color-gray-dark);
+  color: var(--fg-text-2);
 }
 
 .sub-form__chips,
@@ -157,7 +159,7 @@
 .sub-form__keywords input,
 .sub-form select {
   padding: 6px 9px;
-  border: 1px solid var(--color-gray-light);
+  border: 1px solid var(--line-border);
   border-radius: 5px;
   font: inherit;
   font-size: 12px;
@@ -171,7 +173,7 @@
 .sub-form__error {
   margin: 0;
   font-size: 11.5px;
-  color: #b3261e;
+  color: var(--fg-error);
 }
 
 .sub-form__actions {
@@ -186,7 +188,7 @@
 }
 
 .digest-card--unread {
-  border-color: var(--color-black);
+  border-color: var(--line-primary-line);
   cursor: pointer;
 }
 
@@ -195,14 +197,14 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--color-gray-mid);
+  color: var(--fg-muted);
 }
 
 .digest-card__dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--color-black);
+  background: var(--bg-primary);
 }
 
 .digest-card__title {
@@ -220,7 +222,7 @@
 .digest-card__note {
   margin: 8px 0 0;
   font-size: 12.5px;
-  color: var(--color-gray-dark);
+  color: var(--fg-text-2);
 }
 
 .digest-card__articles {
@@ -231,11 +233,11 @@
 }
 
 .digest-card__articles a {
-  color: var(--color-black);
+  color: var(--fg-text);
 }
 
 .digest-card__articles span {
   margin-left: 6px;
-  color: var(--color-gray-mid);
+  color: var(--fg-muted);
   font-size: 11px;
 }

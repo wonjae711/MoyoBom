@@ -256,7 +256,13 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
   )
 
   const addCard = useCallback(
-    async (input: { type: 'article'; article: FeedArticle } | { type: 'memo'; content: string }, x: number, y: number) => {
+    async (
+      input: { type: 'article'; article: FeedArticle } | { type: 'memo'; content: string },
+      x: number,
+      y: number,
+      /** quiet: 실패 알림을 화면이 직접 띄운다 (다시 시도 버튼 등) */
+      options: { quiet?: boolean } = {},
+    ) => {
       const clientId = newClientId()
       const temp: BoardItem = {
         id: `tmp-${clientId}`,
@@ -293,7 +299,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
           : { type: 'memo', content: input.content, x, y, clientId }
       const res = await send<{ item: BoardItem }>('card:add', payload)
       if (res.ok) settle(res.item)
-      else fail(res.message ?? '카드를 추가하지 못했습니다')
+      else if (!options.quiet) fail(res.message ?? '카드를 추가하지 못했습니다')
       setOverlays((prev) => {
         const adds = new Map(prev.adds)
         adds.delete(clientId)

@@ -151,7 +151,7 @@ export function DigestPage() {
       <div className="digests__body">
         <div className="digests__head">
           <div>
-            <h1 className="digests__title serif">뉴스 다이제스트</h1>
+            <h1 className="digests__title">뉴스 다이제스트</h1>
             <p className="digests__sub">관심 분야의 새 기사를 정한 시각에 AI가 한 번에 정리해 알림함으로 보내 드립니다.</p>
           </div>
         </div>
@@ -375,7 +375,7 @@ function DigestCard({ digest, onRead }: { digest: Digest; onRead: () => void }) 
         {!digest.readAt && <span className="digest-card__dot" aria-label="안 읽음" />}
         {when}
       </div>
-      <h3 className="digest-card__title serif">{digest.title}</h3>
+      <h3 className="digest-card__title">{digest.title}</h3>
       {digest.status === 'ok' && <p className="digest-card__summary">{digest.summary}</p>}
       {digest.status === 'empty' && <p className="digest-card__note">새 소식이 없어요. 구독한 분야에 그동안 새로 들어온 기사가 없습니다.</p>}
       {digest.status === 'failed' && <p className="digest-card__note">요약을 만들지 못했어요. 대신 기사 목록을 보내 드립니다.</p>}

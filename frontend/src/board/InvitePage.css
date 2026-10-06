@@ -1,0 +1,64 @@
+/* 초대 링크 (F-07) — 보라 테마 프로토타입 */
+
+.invite-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 40px clamp(24px, 6vw, 88px);
+  background: var(--bg-app);
+}
+
+.invite-page__card {
+  width: 100%;
+  max-width: 440px;
+  margin: 8vh auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 32px;
+  border: 1px solid var(--line-border);
+  border-radius: 16px;
+  background: var(--bg-surface);
+}
+
+.invite-page__card h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+.invite-page__card p {
+  margin: 0 0 8px;
+  color: var(--fg-text-2);
+}
+
+.invite-page__status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg-text-2);
+}
+
+.invite-page__status > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--fg-text);
+}
+
+.invite-page__status--ok > span:first-child {
+  color: var(--fg-success);
+}
+
+.invite-page__sub {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.invite-page__actions {
+  display: flex;
+  gap: 8px;
+}

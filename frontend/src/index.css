@@ -255,13 +255,3 @@ a:hover {
   }
 }
 
-/* 이전 흑백 팔레트 이름 — 화면을 하나씩 보라 테마로 옮기는 동안만 쓰는 임시 연결 (모두 옮기면 지운다) */
-:root {
-  --color-black: var(--fg-text);
-  --color-charcoal: var(--bg-canvas);
-  --color-gray-dark: var(--fg-text-2);
-  --color-gray-mid: var(--fg-muted);
-  --color-gray-light: var(--line-border);
-  --color-off-white: var(--bg-app);
-  --color-white: var(--bg-surface);
-}

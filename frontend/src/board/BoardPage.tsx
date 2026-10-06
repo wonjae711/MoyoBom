@@ -188,8 +188,12 @@ export function BoardPage() {
     if (locked) return
     const at = x === undefined || y === undefined ? viewCenter() : { x: Math.round(x), y: Math.round(y) }
     const dup = board.items.some((i) => i.articleId === article.id)
-    void board.addCard({ type: 'article', article }, at.x, at.y).then((item) => {
-      if (!item) return
+    void board.addCard({ type: 'article', article }, at.x, at.y, { quiet: true }).then((item) => {
+      if (!item) {
+        setSyncFailed(true)
+        showToast('기사를 보드에 추가하지 못했어요.', { tone: 'err', action: { label: '다시 시도', run: () => addArticle(article, at.x, at.y) } })
+        return
+      }
       setSelectedId(item.id)
       showToast(dup ? '이 보드에 이미 있는 기사예요. 카드를 한 장 더 추가했어요.' : '보드에 기사를 추가했어요.', { tone: dup ? 'info' : 'ok' })
     })

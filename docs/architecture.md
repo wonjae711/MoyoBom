@@ -46,7 +46,7 @@
 | 구분 | 기술 스택 | 비고 |
 |---|---|---|
 | 언어 | JavaScript / TypeScript | 프론트-백엔드 동일 언어로 WebSocket 로직 재사용 |
-| 프론트엔드 | React + TypeScript | react-konva로 캔버스 기반 화이트보드 구현 |
+| 프론트엔드 | React + TypeScript | 보드 캔버스는 화면 요소 + CSS 확대·이동으로 구현 (2026-10-06 react-konva에서 변경 — 카드 메뉴·입력·다크 모드·접근성을 일반 화면 요소로 처리) |
 | 백엔드 | Node.js (Express) | WebSocket을 적극 활용하는 실시간 협업 로직 |
 | 실시간 통신 | Socket.io | 보드별 room 단위 동시 편집 동기화 |
 | 데이터베이스 | PostgreSQL + pgvector | 관계형 데이터와 AI 임베딩 검색을 하나의 DB에서 함께 처리 (별도 벡터 DB 불필요) |
