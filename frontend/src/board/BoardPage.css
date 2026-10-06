@@ -1771,3 +1771,27 @@ g:hover > .canvas__link {
     backdrop-filter: none;
   }
 }
+
+/* ---------- 오류가 난 카드·패널 (그 부분만 대체) ---------- */
+.card--broken {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border-style: dashed;
+  border-color: var(--line-border-strong);
+  color: var(--fg-text-2);
+  font-size: 14px;
+  cursor: default;
+}
+
+.panel-error {
+  align-items: flex-start;
+  color: var(--fg-text-2);
+  font-size: 14px;
+}
+
+.panel-error b {
+  color: var(--fg-text);
+}

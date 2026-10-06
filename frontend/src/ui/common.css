@@ -556,3 +556,29 @@
   flex-direction: column;
   overflow: hidden;
 }
+
+/* ---------- 화면 전체 오류 (마지막 안전망) ---------- */
+.page-error {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--bg-app);
+}
+
+.page-error .empty-state {
+  max-width: 440px;
+}
+
+.page-error__icon {
+  color: var(--fg-error);
+}
+
+.page-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
