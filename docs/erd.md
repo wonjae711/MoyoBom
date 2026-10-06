@@ -20,6 +20,8 @@
 
 > ver.1.9 변경 (2026-10-05, F-04): ARTICLES에 검색용 GIN(pg_trgm) 인덱스(title || ' ' || description)와 INDEX(source) 추가 — 둘 다 api_collected만
 
+> ver.1.13 변경 (2026-10-06, 기사 사진): ARTICLES.image_url(대표 사진 주소 — 언론사가 밝힌 og:image, https만, 사진 파일은 저장하지 않음)·image_checked_at(주소 찾기를 시도한 시각, 못 찾아도 기록해 다시 가져오지 않음) 추가, INDEX(created_at DESC) WHERE image_checked_at IS NULL AND api_collected
+
 > ver.1.12 변경 (2026-10-06, F-07): 이메일 가입·로그인 제거 — USERS.password_hash 삭제, UNIQUE(lower(email)) WHERE local 삭제, CHECK는 "소셜이면 provider_id 필수"로 단순화. provider='local'은 예전 이메일 계정 행(로그인 불가)으로만 남는다
 
 > ver.1.11 변경 (2026-10-05, F-09·C-08 구현): DIGEST_SUBSCRIPTIONS를 categories·keywords(text[])·send_hour(한국 시간 0~23시)·active로 바꾸고, 알림함 DIGESTS 추가(구독·받는 시각 UNIQUE로 중복 생성 방지, 상태 pending·ok·empty·failed, 포함 기사는 복사해 jsonb로 저장, read_at, 30일 보관, CHECK(scheduled면 slot 필수·manual이면 null)). 구독 삭제 시 받은 알림은 남김(subscription_id null)
@@ -69,6 +71,8 @@ bigint submitted_by FK "nullable, user_submitted일 때 제출자"
 timestamptz published_at "user_submitted는 확인 불가 시 null"
 vector embedding "vector(1536), text-embedding-3-small, 보드에 처음 추가될 때 생성, 그 전엔 null"
 timestamptz created_at
+string image_url "대표 사진 주소(og:image, https), 없으면 null"
+timestamptz image_checked_at "사진 주소 찾기 시도 시각"
 }
 
 BOARDS {
