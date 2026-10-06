@@ -224,11 +224,11 @@ export class LinkService {
   /** 같은 주소를 동시에 제출해도 기사는 하나만 남는다 */
   private async saveArticle(link: string, page: ExtractedPage, description: string, userId: string): Promise<string> {
     const { rows } = await this.deps.pool.query<{ id: string }>(
-      `INSERT INTO articles (title, description, source, original_link, source_type, submitted_by, published_at)
-       VALUES ($1, $2, $3, $4, 'user_submitted', $5, $6)
+      `INSERT INTO articles (title, description, source, original_link, source_type, submitted_by, published_at, image_url, image_checked_at)
+       VALUES ($1, $2, $3, $4, 'user_submitted', $5, $6, $7, now())
        ON CONFLICT (original_link) DO NOTHING
        RETURNING id`,
-      [page.title || page.source, description, page.source, link, userId, page.publishedAt],
+      [page.title || page.source, description, page.source, link, userId, page.publishedAt, page.imageUrl],
     );
     return rows[0]?.id ?? (await this.findArticle(link))!;
   }

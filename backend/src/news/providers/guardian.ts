@@ -1,4 +1,5 @@
 import { ProviderRequestError } from '../errors.js';
+import { safeImageUrl } from '../images.js';
 import { cleanText } from '../text.js';
 import type { CategoryCode, FetchResult, NormalizedArticle } from '../types.js';
 import { type FetchFn, isHttpUrl, isRecord, requestJson } from './http.js';
@@ -56,7 +57,7 @@ export async function fetchGuardianNews(config: GuardianConfig): Promise<FetchRe
   url.searchParams.set('api-key', config.apiKey);
   url.searchParams.set('order-by', 'newest');
   url.searchParams.set('page-size', String(PAGE_SIZE));
-  url.searchParams.set('show-fields', 'trailText');
+  url.searchParams.set('show-fields', 'trailText,thumbnail');
 
   const body = await requestJson('guardian', url, {}, config.fetchFn ?? fetch);
   const response = isRecord(body) ? body.response : undefined;
@@ -87,6 +88,7 @@ function normalizeGuardianItem(item: unknown): NormalizedArticle | null {
   if (!title || !isHttpUrl(webUrl) || Number.isNaN(publishedAt.getTime())) return null;
 
   const trailText = isRecord(fields) && typeof fields.trailText === 'string' ? fields.trailText : '';
+  const thumbnail = isRecord(fields) && typeof fields.thumbnail === 'string' ? safeImageUrl(fields.thumbnail) : null;
   return {
     title,
     description: cleanText(trailText),
@@ -94,5 +96,6 @@ function normalizeGuardianItem(item: unknown): NormalizedArticle | null {
     category: (typeof sectionId === 'string' && SECTION_TO_CATEGORY[sectionId]) || 'world',
     originalLink: webUrl,
     publishedAt,
+    imageUrl: thumbnail,
   };
 }

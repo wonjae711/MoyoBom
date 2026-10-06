@@ -30,7 +30,7 @@ describe('fetchGuardianNews', () => {
     const [url] = fetchFn.mock.calls[0] as unknown as [URL];
     expect(url.searchParams.get('api-key')).toBe('key');
     expect(url.searchParams.get('order-by')).toBe('newest');
-    expect(url.searchParams.get('show-fields')).toBe('trailText');
+    expect(url.searchParams.get('show-fields')).toBe('trailText,thumbnail');
   });
 
   it('응답을 공통 포맷으로 정규화하고 섹션을 카테고리로 바꾼다', async () => {
@@ -45,8 +45,22 @@ describe('fetchGuardianNews', () => {
         category: 'economy',
         originalLink: 'https://www.theguardian.com/business/2026/oct/01/markets',
         publishedAt: new Date('2026-10-01T12:09:34Z'),
+        imageUrl: null,
       },
     ]);
+  });
+
+  it('대표 사진(thumbnail)은 https 주소만 받는다', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        okBody([
+          guardianItem({ fields: { trailText: 't', thumbnail: 'https://media.guim.co.uk/a.jpg' } }),
+          guardianItem({ webUrl: 'https://www.theguardian.com/b', fields: { trailText: 't', thumbnail: 'http://insecure.example/b.jpg' } }),
+        ]),
+      ),
+    );
+    const { articles } = await fetchGuardianNews({ apiKey: 'key', fetchFn });
+    expect(articles.map((a) => a.imageUrl)).toEqual(['https://media.guim.co.uk/a.jpg', null]);
   });
 
   it('매핑에 없는 섹션은 world로, trailText가 없으면 빈 요약으로 저장한다', async () => {

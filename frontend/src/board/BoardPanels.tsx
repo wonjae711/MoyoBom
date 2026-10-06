@@ -2,6 +2,7 @@ import { formatDateTime } from '../feed/merge'
 import { Icon, Spinner } from '../ui/Icon'
 import type { BoardCluster } from './types'
 import type { ViewItem } from './useBoardSync'
+import { Thumb } from '../ui/Thumb'
 
 /** 오른쪽 패널 틀: 제목 + 닫기, 본문은 children */
 export function SidePanel({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -29,6 +30,7 @@ export interface DetailArticle {
   originalLink: string
   /** 링크로 추가한 기사 (자동 요약) */
   submitted: boolean
+  imageUrl?: string | null
 }
 
 /**
@@ -38,6 +40,7 @@ export interface DetailArticle {
 export function ArticleDetail({ article: a, onAdd, locked }: { article: DetailArticle; onAdd?: () => void; locked?: boolean }) {
   return (
     <div className="side__body">
+      <Thumb src={a.imageUrl} className="detail__image" />
       <span className="detail__category">기사 · {a.category}</span>
       <h3 className="detail__title">{a.title}</h3>
       <dl className="detail__meta">

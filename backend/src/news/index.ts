@@ -7,11 +7,14 @@ import { fetchGuardianNews } from './providers/guardian.js';
 import { fetchNaverNews } from './providers/naver.js';
 import { insertCollectedArticles } from './repository.js';
 import { RETENTION_DAYS, deleteStaleArticles } from './retention.js';
+import { enrichArticleImages } from './images.js';
 import { CATEGORIES, NAVER_SEARCH_ORDER } from './types.js';
 
 /** 수집 주기 (requirements.md F-01): 네이버 10분, Guardian 30분 */
 const NAVER_CRON = '*/10 * * * *';
 const GUARDIAN_CRON = '*/30 * * * *';
+/** 새로 수집된 기사의 대표 사진 찾기: 2분마다 최대 20건 */
+const IMAGE_CRON = '*/2 * * * *';
 /** 미사용 기사 정리: 매일 새벽 4시(KST) */
 const RETENTION_CRON = '0 4 * * *';
 
@@ -42,6 +45,17 @@ export function startNewsSchedule(collector: NewsCollector, pool: pg.Pool): { st
   const tasks = [
     schedule(NAVER_CRON, () => collector.run('naver'), { ...options, name: 'news:naver' }),
     schedule(GUARDIAN_CRON, () => collector.run('guardian'), { ...options, name: 'news:guardian' }),
+    schedule(
+      IMAGE_CRON,
+      async () => {
+        try {
+          await enrichArticleImages(pool);
+        } catch (error) {
+          console.error('[news:images] 실패:', error instanceof Error ? error.message : error);
+        }
+      },
+      { ...options, name: 'news:images' },
+    ),
     schedule(
       RETENTION_CRON,
       async () => {

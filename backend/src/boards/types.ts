@@ -39,6 +39,8 @@ export interface ItemArticle {
   collectedAt: string;
   /** 사용자가 링크로 추가한 기사 (카드에 "링크 요약" 표시) */
   submitted: boolean;
+  /** 대표 사진 주소 (없으면 null) */
+  imageUrl: string | null;
 }
 
 export interface BoardItem {

@@ -12,6 +12,8 @@ export interface FeedArticle {
   publishedAt: string;
   /** 우리 DB에 수집된 시각. 재연결 시 "마지막으로 받은 시점 이후 수집분"을 받는 기준 (C-10) */
   collectedAt: string;
+  /** 대표 사진 주소 (없으면 null) */
+  imageUrl: string | null;
 }
 
 export function toFeedArticle(article: Article): FeedArticle {
@@ -24,6 +26,7 @@ export function toFeedArticle(article: Article): FeedArticle {
     originalLink: article.originalLink,
     publishedAt: article.publishedAt.toISOString(),
     collectedAt: article.createdAt.toISOString(),
+    imageUrl: article.imageUrl ?? null,
   };
 }
 
@@ -133,9 +136,10 @@ interface FeedRow {
   published_at: Date;
   created_at: Date;
   created_us: string;
+  image_url: string | null;
 }
 
-const FEED_COLUMNS = `id, title, description, source, category, original_link, published_at, created_at,
+const FEED_COLUMNS = `id, title, description, source, category, original_link, published_at, created_at, image_url,
   (extract(epoch FROM created_at) * 1000000)::bigint::text AS created_us`;
 
 const collectedCursorOf = (row: { created_us: string; id: string }) => `${row.created_us}_${row.id}`;
@@ -150,6 +154,7 @@ function toFeedRow(row: FeedRow): FeedArticle {
     originalLink: row.original_link,
     publishedAt: row.published_at.toISOString(),
     collectedAt: row.created_at.toISOString(),
+    imageUrl: row.image_url,
   };
 }
 

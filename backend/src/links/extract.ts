@@ -1,6 +1,7 @@
 import { extractFromHtml } from '@extractus/article-extractor';
 import { resolvePress } from '../news/press.js';
 import { cleanText } from '../news/text.js';
+import { findImageUrl } from '../news/images.js';
 
 /** 추적용 쿼리 파라미터 — 같은 기사를 같은 주소로 보기 위해 지운다 */
 const TRACKING = /^(utm_\w+|fbclid|gclid|dclid|msclkid|igshid|mc_cid|mc_eid|_ga|ref|ref_src|cmpid|from)$/i;
@@ -33,6 +34,8 @@ export interface ExtractedPage {
   bodyText: string;
   source: string;
   publishedAt: Date | null;
+  /** 대표 사진 주소 (og:image, https만) */
+  imageUrl: string | null;
 }
 
 const MAX_BODY_CHARS = 6000;
@@ -76,5 +79,6 @@ export async function extractPage(html: string, url: URL): Promise<ExtractedPage
     bodyText,
     source: resolvePress(url.toString()) ?? url.hostname,
     publishedAt: published && !Number.isNaN(published.getTime()) ? published : null,
+    imageUrl: findImageUrl(html, url.toString()),
   };
 }

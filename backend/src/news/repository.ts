@@ -10,6 +10,7 @@ interface ArticleRow {
   original_link: string;
   published_at: Date;
   created_at: Date;
+  image_url: string | null;
 }
 
 /**
@@ -20,12 +21,13 @@ export async function insertCollectedArticles(pool: pg.Pool, articles: Normalize
   if (articles.length === 0) return [];
 
   const { rows } = await pool.query<ArticleRow>(
-    `INSERT INTO articles (title, description, source, category, original_link, source_type, published_at)
-     SELECT t.title, t.description, t.source, t.category, t.original_link, 'api_collected', t.published_at
-     FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
-       AS t(title, description, source, category, original_link, published_at)
+    `INSERT INTO articles (title, description, source, category, original_link, source_type, published_at, image_url, image_checked_at)
+     SELECT t.title, t.description, t.source, t.category, t.original_link, 'api_collected', t.published_at,
+       t.image_url, CASE WHEN t.image_url IS NOT NULL THEN now() END
+     FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::text[])
+       AS t(title, description, source, category, original_link, published_at, image_url)
      ON CONFLICT (original_link) DO NOTHING
-     RETURNING id, title, description, source, category, original_link, published_at, created_at`,
+     RETURNING id, title, description, source, category, original_link, published_at, created_at, image_url`,
     [
       articles.map((a) => a.title),
       articles.map((a) => a.description),
@@ -33,6 +35,7 @@ export async function insertCollectedArticles(pool: pg.Pool, articles: Normalize
       articles.map((a) => a.category),
       articles.map((a) => a.originalLink),
       articles.map((a) => a.publishedAt),
+      articles.map((a) => a.imageUrl ?? null),
     ],
   );
 
@@ -45,5 +48,6 @@ export async function insertCollectedArticles(pool: pg.Pool, articles: Normalize
     originalLink: row.original_link,
     publishedAt: row.published_at,
     createdAt: row.created_at,
+    imageUrl: row.image_url,
   }));
 }

@@ -4,7 +4,7 @@ import { createTestPool, testDatabaseUrl } from '../test/db.js';
 import { compareFeed, decodeCollectedCursor, decodeCursor, encodeCursor, listFeed, listSources, searchTerms, type FeedArticle } from './feed.js';
 
 function feedArticle(id: string, publishedAt: string): FeedArticle {
-  return { id, title: id, description: '', source: 's', category: 'economy', originalLink: `https://e.com/${id}`, publishedAt, collectedAt: publishedAt };
+  return { id, title: id, description: '', source: 's', category: 'economy', originalLink: `https://e.com/${id}`, publishedAt, collectedAt: publishedAt, imageUrl: null };
 }
 
 describe('[F-04] 검색어 나누기', () => {

@@ -6,6 +6,7 @@ import type { FeedArticle } from '../feed/types'
 import { useNewsFeed } from '../feed/useNewsFeed'
 import { Icon, Spinner } from '../ui/Icon'
 import { ARTICLE_DRAG_TYPE } from './BoardCanvas'
+import { Thumb } from '../ui/Thumb'
 
 /**
  * 보드 왼쪽 "뉴스에서 찾기" (F-02·F-05, 보라 테마 프로토타입). 기사를 보드로 끌어 놓거나 "추가" 버튼(키보드 가능)으로 추가한다.
@@ -101,6 +102,7 @@ function PanelList({
               {article.title}
             </button>
           </div>
+          <Thumb src={article.imageUrl} className="news-panel__thumb" />
           <button
             type="button"
             className="news-panel__add"

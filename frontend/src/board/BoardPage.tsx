@@ -42,6 +42,7 @@ const feedDetail = (a: FeedArticle): DetailArticle => ({
   description: a.description,
   originalLink: a.originalLink,
   submitted: false,
+  imageUrl: a.imageUrl,
 })
 
 const itemDetail = (item: BoardItem): DetailArticle | null =>
@@ -54,6 +55,7 @@ const itemDetail = (item: BoardItem): DetailArticle | null =>
     description: item.article.description,
     originalLink: item.article.originalLink,
     submitted: item.article.submitted,
+    imageUrl: item.article.imageUrl,
   }
 
 function useViewportWidth() {

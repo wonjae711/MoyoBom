@@ -39,6 +39,7 @@ interface ItemRow {
   a_published_at: Date | null;
   a_created_at: Date | null;
   a_source_type: string | null;
+  a_image_url: string | null;
 }
 
 const ITEM_COLUMNS = `
@@ -47,7 +48,7 @@ const ITEM_COLUMNS = `
   (bi.arranged_version IS NOT NULL) AS arranged,
   a.title AS a_title, a.description AS a_description, a.source AS a_source, a.category AS a_category,
   a.original_link AS a_original_link, a.published_at AS a_published_at,
-  a.created_at AS a_created_at, a.source_type AS a_source_type`;
+  a.created_at AS a_created_at, a.source_type AS a_source_type, a.image_url AS a_image_url`;
 
 function toItem(row: ItemRow): BoardItem {
   return {
@@ -65,6 +66,7 @@ function toItem(row: ItemRow): BoardItem {
             publishedAt: row.a_published_at?.toISOString() ?? null,
             collectedAt: (row.a_created_at ?? row.updated_at).toISOString(),
             submitted: row.a_source_type === 'user_submitted',
+            imageUrl: row.a_image_url,
           }
         : null,
     content: row.content,

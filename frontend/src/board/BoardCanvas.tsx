@@ -13,6 +13,7 @@ import {
 } from './cardLayout'
 import type { BoardCluster, BoardConnection, BoardMember } from './types'
 import type { ViewItem } from './useBoardSync'
+import { Thumb } from '../ui/Thumb'
 
 /** 피드에서 끌어 온 기사를 담는 드래그 데이터 형식 */
 export const ARTICLE_DRAG_TYPE = 'application/x-moyobom-article'
@@ -428,6 +429,7 @@ function Card({
         </div>
       )}
 
+      {item.type === 'article' && <Thumb src={item.article?.imageUrl} className="card__image" />}
       {item.type === 'article' && (
         <div className="card__article">
           <div className="card__label">

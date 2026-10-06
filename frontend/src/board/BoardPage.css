@@ -1669,3 +1669,105 @@
 g:hover > .canvas__link {
   stroke: var(--line-primary);
 }
+
+/* ---------- 기사 대표 사진 ---------- */
+.card__image {
+  display: block;
+  width: 100%;
+  height: 148px;
+  border-radius: 11px 11px 0 0;
+  object-fit: cover;
+  background: var(--bg-canvas);
+  pointer-events: none;
+}
+
+.detail__image {
+  width: 100%;
+  max-height: 200px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--bg-canvas);
+}
+
+.news-panel__thumb {
+  flex: none;
+  align-self: flex-start;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--bg-canvas);
+}
+
+/* ---------- 왼쪽 뉴스 패널: 유리 느낌 (2026-10-06 사용자 요청) ----------
+   패널 바탕에 옅은 보라·파랑 빛 번짐을 깔고, 기사 하나하나를 반투명 + 배경 흐림 + 위쪽 빛 반사 테두리로 띄운다 */
+.news-panel {
+  --glass-bg: rgba(var(--surface-rgb), 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.7);
+  --glass-hi: rgba(255, 255, 255, 0.85);
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(124, 58, 237, 0.14), transparent 60%),
+    radial-gradient(90% 50% at 100% 40%, rgba(47, 107, 234, 0.1), transparent 65%),
+    radial-gradient(100% 50% at 20% 100%, rgba(167, 139, 250, 0.16), transparent 60%),
+    var(--bg-app);
+}
+
+:root[data-theme='dark'] .news-panel {
+  --glass-bg: rgba(var(--surface-rgb), 0.5);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-hi: rgba(255, 255, 255, 0.14);
+}
+
+.news-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 60px;
+  border-top: none;
+}
+
+.news-panel__item {
+  border: 1px solid var(--glass-edge);
+  border-bottom: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    0 4px 14px rgba(var(--shadow-rgb), 0.07);
+  transition:
+    background 0.2s,
+    box-shadow 0.2s,
+    transform 0.15s;
+}
+
+.news-panel__item:hover {
+  background: rgba(var(--surface-rgb), 0.75);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    0 8px 20px rgba(var(--shadow-rgb), 0.1);
+  transform: translateY(-1px);
+}
+
+.news-panel__item--new {
+  background: rgba(240, 234, 254, 0.7);
+}
+
+:root[data-theme='dark'] .news-panel__item--new {
+  background: rgba(46, 36, 72, 0.7);
+}
+
+.news-panel__state,
+.news-panel__more {
+  border-radius: 14px;
+  background: var(--glass-bg);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .news-panel__item {
+    background: var(--bg-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

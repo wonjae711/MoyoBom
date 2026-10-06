@@ -9,6 +9,7 @@ import { formatRelativeTime } from './merge'
 import { CATEGORY_LABELS, type FeedArticle } from './types'
 import { useNewsFeed, type ConnectionStatus } from './useNewsFeed'
 import './NewsFeed.css'
+import { Thumb } from '../ui/Thumb'
 
 const STATUS: Record<ConnectionStatus, { text: string; tone: string }> = {
   connecting: { text: '연결 중', tone: 'wait' },
@@ -157,20 +158,25 @@ function FeedResults({
           <ol className="news__list" aria-label="기사 목록">
             {articles.map((article) => (
               <li key={article.id} className={`news__item${highlighted.has(article.id) ? ' news__item--new' : ''}`}>
-                <div className="news__meta">
-                  <b>{article.source}</b>
-                  <span aria-hidden="true">·</span>
-                  <span>{CATEGORY_LABELS[article.category] ?? article.category}</span>
-                  <span aria-hidden="true">·</span>
-                  <time dateTime={article.publishedAt} title={new Date(article.publishedAt).toLocaleString('ko-KR')}>
-                    {formatRelativeTime(article.publishedAt, now)}
-                  </time>
-                  {highlighted.has(article.id) && <span className="news__new">새 기사</span>}
+                <div className="news__item-row">
+                  <div className="news__item-text">
+                    <div className="news__meta">
+                      <b>{article.source}</b>
+                      <span aria-hidden="true">·</span>
+                      <span>{CATEGORY_LABELS[article.category] ?? article.category}</span>
+                      <span aria-hidden="true">·</span>
+                      <time dateTime={article.publishedAt} title={new Date(article.publishedAt).toLocaleString('ko-KR')}>
+                        {formatRelativeTime(article.publishedAt, now)}
+                      </time>
+                      {highlighted.has(article.id) && <span className="news__new">새 기사</span>}
+                    </div>
+                    <button type="button" className="news__title" onClick={() => onOpen(article)}>
+                      {article.title}
+                    </button>
+                    {article.description && <p className="news__desc">{article.description}</p>}
+                  </div>
+                  <Thumb src={article.imageUrl} className="news__thumb" />
                 </div>
-                <button type="button" className="news__title" onClick={() => onOpen(article)}>
-                  {article.title}
-                </button>
-                {article.description && <p className="news__desc">{article.description}</p>}
                 <div className="news__actions">
                   <a className="news__origin" href={article.originalLink} target="_blank" rel="noopener noreferrer">
                     원문 보기 <Icon name="ext" size={15} />

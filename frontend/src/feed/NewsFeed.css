@@ -461,3 +461,34 @@
   font-weight: 600;
   color: var(--fg-success-ink);
 }
+
+/* ---------- 기사 대표 사진 ---------- */
+.news__item-row {
+  display: flex;
+  gap: 16px;
+}
+
+.news__item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.news__thumb {
+  flex: none;
+  width: 128px;
+  height: 88px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--bg-canvas);
+}
+
+.preview__image {
+  width: 100%;
+  max-height: 240px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--bg-canvas);
+}

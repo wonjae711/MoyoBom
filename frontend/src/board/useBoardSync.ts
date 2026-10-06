@@ -279,6 +279,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
                 publishedAt: input.article.publishedAt,
                 collectedAt: input.article.collectedAt,
                 submitted: false,
+                imageUrl: input.article.imageUrl ?? null,
               }
             : null,
         content: input.type === 'memo' ? input.content : null,

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Icon } from '../ui/Icon'
 import { formatDateTime } from './merge'
 import { CATEGORY_LABELS, type FeedArticle } from './types'
+import { Thumb } from '../ui/Thumb'
 
 /**
  * 기사 미리보기 옆 패널 (B6): 제목·출처·발행·수집 시각과 기사 설명. 전체 내용은 원문에서.
@@ -31,6 +32,7 @@ export function ArticlePreview({ article, onClose, onAdd }: { article: FeedArtic
           </button>
         </div>
         <div className="preview__body">
+          <Thumb src={article.imageUrl} className="preview__image" />
           <span className="preview__category">{CATEGORY_LABELS[article.category] ?? article.category}</span>
           <h2 className="preview__title">{article.title}</h2>
           <dl className="preview__meta">

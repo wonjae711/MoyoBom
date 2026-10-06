@@ -32,6 +32,8 @@ export interface FeedArticle {
   publishedAt: string
   /** 수집된 시각 — 재연결 시 누락분 보완 기준 (C-10) */
   collectedAt: string
+  /** 대표 사진 주소 (없거나 아직 찾지 못했으면 null) */
+  imageUrl?: string | null
 }
 
 export interface FeedPage {

@@ -45,6 +45,8 @@ export interface NormalizedArticle {
   category: CategoryCode;
   originalLink: string;
   publishedAt: Date;
+  /** 대표 사진 주소 (Guardian은 API가 주고, 네이버는 수집 뒤 원문 페이지의 og:image로 채운다) */
+  imageUrl?: string | null;
 }
 
 /** 한 번의 API 요청 결과. skipped = 형식 오류로 건너뛴 기사 수 */
