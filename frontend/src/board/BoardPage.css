@@ -538,12 +538,15 @@
 
 /* ---------- 카드 ---------- */
 .card {
+  /* 보드 위에 놓인 종이처럼 보이도록 가벼운 음영 (2026-10-06 사용자 요청). 선택·강조 링과 함께 쓴다 */
+  --card-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.08), 0 4px 12px rgba(var(--shadow-rgb), 0.1);
   position: absolute;
   transform: translate(-50%, -50%);
   box-sizing: border-box;
   border: 1px solid var(--line-border);
   border-radius: 12px;
   background: var(--bg-surface);
+  box-shadow: var(--card-shadow);
   cursor: grab;
   transition:
     opacity 0.15s,
@@ -557,18 +560,24 @@
 }
 
 .card--memo {
+  /* 포스트잇: 아래쪽이 살짝 들린 느낌으로 조금 더 진하게 */
+  --card-shadow: 0 2px 4px rgba(var(--shadow-rgb), 0.1), 0 8px 16px rgba(var(--shadow-rgb), 0.12);
   border-color: var(--line-memo-line);
   border-radius: 4px;
   background: var(--bg-memo);
 }
 
 .card--photo {
+  /* 사진: 인화지처럼 */
+  --card-shadow: 0 2px 4px rgba(var(--shadow-rgb), 0.1), 0 8px 18px rgba(var(--shadow-rgb), 0.14);
   border-radius: 4px;
 }
 
 .card--selected {
   border-color: var(--line-primary);
-  box-shadow: 0 0 0 1px var(--line-primary);
+  box-shadow:
+    0 0 0 1px var(--line-primary),
+    var(--card-shadow);
 }
 
 .card--dragging {
@@ -591,7 +600,9 @@
 }
 
 .card--lit {
-  box-shadow: 0 0 0 3px var(--line-primary-line);
+  box-shadow:
+    0 0 0 3px var(--line-primary-line),
+    var(--card-shadow);
 }
 
 .card--connect {
