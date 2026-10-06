@@ -461,6 +461,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
         next.delete(connectionId)
         return next
       })
+      return res.ok || res.error === 'not_found'
     },
     [send, fail],
   )

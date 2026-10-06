@@ -1594,3 +1594,78 @@
 .link__problem {
   align-items: flex-start;
 }
+
+/* 선택한 연결선의 삭제 메뉴 (월드 좌표, 선 가운데) */
+.link-menu {
+  position: absolute;
+  z-index: 99999;
+  transform: translate(-50%, -50%);
+  cursor: default;
+}
+
+.link-menu__bar,
+.link-menu__confirm {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: 0 6px 18px rgba(var(--shadow-rgb), 0.14);
+  white-space: nowrap;
+}
+
+.link-menu__confirm {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.link-menu__confirm div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.link-menu__delete,
+.link-menu__close {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.link-menu__delete {
+  color: var(--fg-error);
+}
+
+.link-menu__delete:hover {
+  background: var(--bg-error-soft);
+}
+
+.link-menu__close {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  color: var(--fg-text-2);
+}
+
+.link-menu__close:hover {
+  background: var(--bg-canvas);
+}
+
+/* 연결선에 마우스를 올리면 눌러서 고를 수 있음을 보여 준다 */
+.canvas__link-hit:hover + .canvas__link,
+g:hover > .canvas__link {
+  stroke: var(--line-primary);
+}

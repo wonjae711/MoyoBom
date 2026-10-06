@@ -586,6 +586,10 @@ export function BoardPage() {
                 setSelectedConnectionId(id)
                 if (id) setSelectedId(null)
               }}
+              onDeleteConnection={(id) => {
+                setSelectedConnectionId(null)
+                void board.deleteConnection(id).then((ok) => ok && showToast('연결선을 지웠어요.', { tone: 'ok' }))
+              }}
               connectMode={connectMode}
               connectFrom={connectFrom}
               onPickCard={pickCard}
@@ -679,7 +683,7 @@ export function BoardPage() {
 
             {connectMode && (
               <div className="board__mode" role="status" data-ui>
-                {connectFrom ? '이을 카드를 누르세요' : '연결할 첫 카드를 누르세요'} · Esc로 그만두기
+                {connectFrom ? '이을 카드를 누르세요' : '연결할 첫 카드를 누르세요'} · Esc로 그만두기 · 이은 선은 그만둔 뒤 선을 눌러 지울 수 있어요
                 <button type="button" className="text-btn" onClick={toggleConnectMode}>
                   그만두기
                 </button>

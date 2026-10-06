@@ -65,6 +65,8 @@ interface Props {
   connections: BoardConnection[]
   selectedConnectionId: string | null
   onSelectConnection: (id: string | null) => void
+  /** 잘못 이은 연결선 지우기 (선을 누르면 가운데에 삭제 버튼) */
+  onDeleteConnection: (id: string) => void
   connectMode: boolean
   connectFrom: string | null
   onPickCard: (id: string) => void
@@ -287,6 +289,15 @@ export function BoardCanvas(props: Props) {
         {props.clusters.map((cluster) => (
           <ClusterCard key={cluster.id} cluster={cluster} items={positioned} props={props} />
         ))}
+        {props.selectedConnectionId && !connectMode && !locked && (
+          <ConnectionMenu
+            key={props.selectedConnectionId}
+            connection={props.connections.find((c) => c.id === props.selectedConnectionId)}
+            byId={byId}
+            onDelete={props.onDeleteConnection}
+            onClose={() => props.onSelectConnection(null)}
+          />
+        )}
       </div>
       {dropping && (
         <div className="canvas__drop" aria-hidden="true">
@@ -534,6 +545,51 @@ function ClusterCard({ cluster, items, props }: { cluster: BoardCluster; items: 
           제안 무시
         </button>
       </div>
+    </div>
+  )
+}
+
+/** 선택한 연결선 가운데에 뜨는 삭제 메뉴 — 한 번 더 확인하고 지운다 (Delete 키로도 지울 수 있음) */
+function ConnectionMenu({
+  connection,
+  byId,
+  onDelete,
+  onClose,
+}: {
+  connection: BoardConnection | undefined
+  byId: Map<string, ViewItem>
+  onDelete: (id: string) => void
+  onClose: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const from = connection && byId.get(connection.fromId)
+  const to = connection && byId.get(connection.toId)
+  if (!connection || !from || !to) return null
+  return (
+    <div data-ui className="link-menu" style={{ left: (from.x + to.x) / 2, top: (from.y + to.y) / 2 }}>
+      {confirming ? (
+        <div role="alertdialog" aria-label="연결선 삭제 확인" className="link-menu__confirm">
+          <span>이 연결선을 지울까요?</span>
+          <div>
+            <button type="button" className="btn btn--ghost btn--xs" onClick={() => setConfirming(false)}>
+              취소
+            </button>
+            <button type="button" className="btn btn--danger btn--xs" autoFocus onClick={() => onDelete(connection.id)}>
+              삭제
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div role="toolbar" aria-label="연결선 메뉴" className="link-menu__bar">
+          <button type="button" className="link-menu__delete" onClick={() => setConfirming(true)}>
+            <Icon name="trash" size={16} />
+            연결선 삭제
+          </button>
+          <button type="button" className="link-menu__close" onClick={onClose} aria-label="연결선 선택 해제" title="선택 해제">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
