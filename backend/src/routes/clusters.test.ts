@@ -86,14 +86,20 @@ describe.skipIf(!testDatabaseUrl)('[F-08] AI 이슈 클러스터링 (DB)', () =>
     const chips = [await card('반도체 수출 규제', 0, 0), await card('반도체 장비 통제', 300, 0), await card('반도체 소재 영향', 0, 300)];
     const mideast = [await card('중동 긴장 고조', 900, 0), await card('중동 유가 급등', 900, 300)];
     await card('프로야구 개막', 2000, 2000);
-    await boards.addItem(boardId, owner.id, { type: 'memo', content: '메모는 분석에서 빠진다', x: 0, y: 0 });
+    // 메모도 함께 분석한다 (2026-10-06): 반도체 이야기 메모는 반도체 이슈에 묶이고, 너무 짧은 메모는 뺀다
+    const memo = (await boards.addItem(boardId, owner.id, { type: 'memo', content: '반도체 규제 대응 메모', x: 0, y: 0 })).id;
+    await boards.addItem(boardId, owner.id, { type: 'memo', content: '음', x: 0, y: 0 });
     const before = (await boards.getSnapshot(boardId, owner.id)).items.map((i) => [i.id, i.x, i.y]);
 
     const res = await run(editor.cookie); // 편집자도 실행할 수 있다 (C-05 기본안)
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ analyzed: 6, excluded: 0, remaining: 9 });
-    expect(res.body.clusters.map((c: { itemIds: string[] }) => c.itemIds)).toEqual([chips, mideast]);
-    expect(res.body.clusters[0]).toMatchObject({ title: '이슈 3건', summary: '공통 이슈 요약' });
+    expect(res.body).toMatchObject({ analyzed: 7, excluded: 0, remaining: 9 });
+    expect(res.body.clusters.map((c: { itemIds: string[] }) => c.itemIds)).toEqual([[...chips, memo], mideast]);
+    expect(res.body.clusters[0]).toMatchObject({ title: '이슈 4건', summary: '공통 이슈 요약' });
+    // 요약에는 메모 내용도 "메모"로 넘긴다
+    expect(summarizeCluster.mock.calls[0]![0]).toContainEqual({ title: '메모', text: '반도체 규제 대응 메모' });
+    // 메모 임베딩은 저장하지 않는다 (메모는 바뀌므로 분석할 때마다 만든다)
+    expect(embed.mock.calls.some(([texts]) => texts.includes('반도체 규제 대응 메모'))).toBe(true);
     expect(calls).toContainEqual(['clustersChanged', boardId, '2']);
 
     const snapshot = await boards.getSnapshot(boardId, owner.id);
@@ -165,6 +171,25 @@ describe.skipIf(!testDatabaseUrl)('[F-08] AI 이슈 클러스터링 (DB)', () =>
     expect(second.status).toBe(409);
     release();
     expect((await first).status).toBe(201);
+  });
+
+  it('메모만 있어도 2개 이상이면 분석하고, 메모 임베딩이 실패하면 기사만으로 분석한다', async () => {
+    await boards.addItem(boardId, owner.id, { type: 'memo', content: '반도체 공급망 메모', x: 0, y: 0 });
+    await boards.addItem(boardId, owner.id, { type: 'memo', content: '반도체 수출 메모', x: 0, y: 0 });
+    const onlyMemos = await run();
+    expect(onlyMemos.status).toBe(201);
+    expect(onlyMemos.body.clusters[0].itemIds).toHaveLength(2);
+
+    await card('반도체 A');
+    await card('반도체 B');
+    embed.mockImplementation(async (texts: string[]) => {
+      if (texts.some((t) => t.includes('메모'))) throw new EmbeddingError('메모 실패');
+      return texts.map(topicVector);
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await run();
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ analyzed: 2, excluded: 2 });
   });
 
   it('기사 카드가 2개 미만이면 400, 멤버가 아니면 404, 하루 한도를 넘으면 429', async () => {

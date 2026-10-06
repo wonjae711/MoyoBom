@@ -115,6 +115,15 @@ export function BoardPage() {
   const locked = board.status !== 'ready'
   const members = useMemo(() => new Map(board.members.map((m) => [m.userId, m])), [board.members])
   const articles = useMemo(() => board.items.filter((i) => i.type === 'article' && !i.id.startsWith('tmp-')), [board.items])
+  /** AI로 정리 대상: 기사 카드 + 내용이 4자 이상인 메모·사진 카드 (2026-10-06 메모·사진도 함께 묶기) */
+  const aiCards = useMemo(
+    () =>
+      board.items.filter(
+        (i) =>
+          !i.id.startsWith('tmp-') && (i.type === 'article' || ((i.type === 'memo' || i.type === 'photo') && (i.content ?? '').trim().length >= 4)),
+      ),
+    [board.items],
+  )
   const owner = board.role === 'owner'
 
   useEffect(() => {
@@ -272,12 +281,12 @@ export function BoardPage() {
   // ---------- AI로 정리 (F-08, B13) ----------
   const analyze = async () => {
     openRight({ kind: 'ai' })
-    if (articles.length < 2 || locked) return
+    if (aiCards.length < 2 || locked) return
     setAiState('analyzing')
     setHighlightId(null)
     try {
       const result = await board.analyze()
-      setAnalyzedIds(new Set(articles.map((a) => a.id)))
+      setAnalyzedIds(new Set(aiCards.map((a) => a.id)))
       setClusterRemaining(result.remaining)
       setAiState('idle')
     } catch (error) {
@@ -291,7 +300,7 @@ export function BoardPage() {
   const openAi = () => {
     if (right?.kind === 'ai') return setRight(null)
     openRight({ kind: 'ai' })
-    if (board.clusters.length === 0 && analyzedIds === null && articles.length >= 2) void analyze()
+    if (board.clusters.length === 0 && analyzedIds === null && aiCards.length >= 2) void analyze()
   }
   const arrangeAll = async (action: 'arrange' | 'restore') => {
     setAiBusy(true)
@@ -741,7 +750,7 @@ export function BoardPage() {
                 <AiPanel
                   state={aiState}
                   clusters={board.clusters}
-                  articles={articles}
+                  articles={aiCards}
                   analyzedIds={analyzedIds}
                   highlightId={highlightId}
                   onToggle={(id) => setHighlightId((h) => (h === id ? null : id))}

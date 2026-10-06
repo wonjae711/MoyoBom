@@ -347,7 +347,7 @@ function Card({
   const draft = item.id === DRAFT_MEMO_ID
   const editing = props.memoEdit?.id === item.id ? props.memoEdit : null
   const selected = props.connectMode ? props.connectFrom === item.id : props.selectedId === item.id
-  const dimmed = props.highlight !== null && item.type === 'article' && !props.highlight.has(item.id)
+  const dimmed = props.highlight !== null && !props.highlight.has(item.id)
   const lit = props.highlight?.has(item.id) ?? false
   const showMenu = selected && !props.connectMode && !props.locked && !editing && !temp && !draft && !confirming && !dragging
   const member = item.movingBy ? props.members.get(item.movingBy)?.nickname : null
@@ -528,7 +528,7 @@ function ClusterCard({ cluster, items, props }: { cluster: BoardCluster; items: 
     >
       <div className="cluster-card__label">
         <span className="badge">AI 이슈</span>
-        <span>기사 {members.length}개</span>
+        <span>카드 {members.length}개</span>
       </div>
       <b className="cluster-card__title">{cluster.title}</b>
       {cluster.summary && <p className="cluster-card__summary">{cluster.summary}</p>}

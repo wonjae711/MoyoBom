@@ -95,6 +95,7 @@ export function AiPanel({
 }: {
   state: AiState
   clusters: BoardCluster[]
+  /** 분석 대상 카드 (기사·메모·사진) */
   articles: ViewItem[]
   /** 이 화면에서 분석했을 때의 기사 카드 (바뀌었는지 비교용, 모르면 null) */
   analyzedIds: Set<string> | null
@@ -117,11 +118,16 @@ export function AiPanel({
     analyzedIds !== null &&
     (articles.length !== analyzedIds.size || articles.some((a) => !analyzedIds.has(a.id)))
   const line = (item: ViewItem | undefined) =>
-    item?.article && (
+    item &&
+    (item.article ? (
       <span key={item.id} className="ai__item">
         · {item.article.title} <span>({item.article.source})</span>
       </span>
-    )
+    ) : (
+      <span key={item.id} className="ai__item">
+        · {item.content} <span>({item.type === 'memo' ? '메모' : '사진'})</span>
+      </span>
+    ))
 
   let body: React.ReactNode
   if (state === 'analyzing')
@@ -131,7 +137,7 @@ export function AiPanel({
           <Spinner />
           기사를 읽고 있어요
         </b>
-        <span>기사 카드 {articles.length}개를 같은 이슈끼리 묶는 중이에요. 10~20초쯤 걸려요.</span>
+        <span>카드 {articles.length}개를 같은 이슈끼리 묶는 중이에요. 10~20초쯤 걸려요.</span>
         <div className="skeleton ai__skeleton" />
         <div className="skeleton ai__skeleton" />
       </div>
@@ -149,18 +155,18 @@ export function AiPanel({
   else if (articles.length === 0)
     body = (
       <div className="ai__state">
-        <b>보드에 기사가 없어요.</b>
-        <span>왼쪽 뉴스에서 기사를 추가하면 정리를 도와드릴게요.</span>
+        <b>정리할 카드가 없어요.</b>
+        <span>왼쪽 뉴스에서 기사를 추가하거나 메모를 남기면 정리를 도와드릴게요.</span>
       </div>
     )
   else if (clusters.length === 0 && analyzedIds === null)
     body = (
       <div className="ai__state">
-        <b>{articles.length < 2 ? '관련 기사를 조금 더 모아 주세요.' : '모은 기사를 이슈별로 묶어 볼까요?'}</b>
+        <b>{articles.length < 2 ? '관련 카드를 조금 더 모아 주세요.' : '모은 카드를 이슈별로 묶어 볼까요?'}</b>
         <span>
           {articles.length < 2
-            ? '기사 카드가 2개 이상 있어야 분석할 수 있어요.'
-            : `기사 카드 ${articles.length}개를 분석해 같은 이슈끼리 묶고 요약해요. 카드 위치는 바꾸지 않아요.`}
+            ? '기사·메모 카드가 2개 이상 있어야 분석할 수 있어요.'
+            : `카드 ${articles.length}개(기사·메모)를 분석해 같은 이슈끼리 묶고 요약해요. 카드 위치는 바꾸지 않아요.`}
         </span>
         {articles.length >= 2 && (
           <button type="button" className="btn btn--sm ai__start" onClick={onAnalyze} disabled={locked}>
@@ -183,7 +189,7 @@ export function AiPanel({
         <div className="ai__head">
           <b>모은 기사에서 찾은 쟁점</b>
           <span>
-            이슈 {clusters.length}개 · 기사 {grouped.size}개
+            이슈 {clusters.length}개 · 카드 {grouped.size}개
           </span>
         </div>
         {stale && <div className="notice notice--warn ai__notice">분석 이후 보드의 기사가 바뀌었어요. 다시 분석하면 반영돼요.</div>}
@@ -196,7 +202,7 @@ export function AiPanel({
                 <button type="button" className={`ai__group${on ? ' ai__group--on' : ''}`} aria-pressed={on} onClick={() => onToggle(c.id)}>
                   <span className="ai__group-head">
                     <b>{c.title}</b>
-                    <span>기사 {members.length}개</span>
+                    <span>카드 {members.length}개</span>
                   </span>
                   {c.summary && <span className="ai__group-sum">{c.summary}</span>}
                   <span className="ai__group-items">{members.map(line)}</span>
@@ -207,11 +213,11 @@ export function AiPanel({
         </ul>
         {solo.length > 0 && (
           <div className="ai__solo">
-            <b>묶이지 않은 기사</b>
+            <b>묶이지 않은 카드</b>
             {solo.map(line)}
           </div>
         )}
-        <p className="ai__disclaimer">AI가 만든 제안이에요. 기사 카드만 분석하며, 메모와 사진은 포함하지 않아요.</p>
+        <p className="ai__disclaimer">AI가 만든 제안이에요. 기사와 메모(4자 이상)를 함께 분석해요. 사진은 설명이 있을 때만 포함해요.</p>
       </>
     )
 
