@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import { addLink as postLink, dismissCluster, getBoard, moveCluster, runClusters } from './api'
+import { confirmLink, dismissCluster, getBoard, moveCluster, runClusters } from './api'
 import { refreshSession } from '../api/client'
 import type { FeedArticle } from '../feed/types'
 import {
@@ -33,6 +33,8 @@ export type BoardStatus =
 export interface ViewItem extends BoardItem {
   /** 서버에 저장되기 전 (ack 대기) */
   pending: boolean
+  /** 다른 참여자가 지금 끌고 있으면 그 사람 id */
+  movingBy?: string
 }
 
 interface Overlays {
@@ -61,7 +63,7 @@ const newClientId = () => `c${Date.now().toString(36)}${(clientCounter++).toStri
 export function useBoardSync(boardId: string, options: { onError?: (message: string) => void } = {}) {
   const [server, setServer] = useState<BoardState>(emptyBoardState)
   const [overlays, setOverlays] = useState<Overlays>(emptyOverlays)
-  const [remoteDrag, setRemoteDrag] = useState<Map<string, { x: number; y: number; at: number }>>(new Map())
+  const [remoteDrag, setRemoteDrag] = useState<Map<string, { x: number; y: number; at: number; by?: string }>>(new Map())
   const [status, setStatus] = useState<BoardStatus>('connecting')
   const [goneReason, setGoneReason] = useState<string | null>(null)
   const [title, setTitle] = useState('')
@@ -162,9 +164,9 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     socket.on('card:deleted', (d: { boardId: string; itemId: string; version: number }) => {
       if (mine(d)) receive({ kind: 'delete', itemId: d.itemId, version: d.version })
     })
-    socket.on('card:moving', (d: { boardId: string; itemId: string; x: number; y: number }) => {
+    socket.on('card:moving', (d: { boardId: string; itemId: string; x: number; y: number; by?: string }) => {
       if (!mine(d)) return
-      setRemoteDrag((prev) => new Map(prev).set(d.itemId, { x: d.x, y: d.y, at: Date.now() }))
+      setRemoteDrag((prev) => new Map(prev).set(d.itemId, { x: d.x, y: d.y, at: Date.now(), by: d.by }))
     })
     socket.on('connection:added', (d: { boardId: string; connection: BoardConnection }) => {
       if (mine(d)) receive({ kind: 'link-add', connection: d.connection })
@@ -236,6 +238,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
         ...(move ? { x: move.x, y: move.y, zIndex: move.zIndex } : drag ? { x: drag.x, y: drag.y } : {}),
         ...(memo ? { content: memo.content } : {}),
         pending: Boolean(move || memo),
+        ...(drag && !move ? { movingBy: drag.by } : {}),
       })
     }
     for (const temp of overlays.adds.values()) list.push({ ...temp, pending: true })
@@ -268,6 +271,8 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
                 category: input.article.category,
                 originalLink: input.article.originalLink,
                 publishedAt: input.article.publishedAt,
+                collectedAt: input.article.collectedAt,
+                submitted: false,
               }
             : null,
         content: input.type === 'memo' ? input.content : null,
@@ -315,6 +320,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
         moves.delete(itemId)
         return { ...prev, moves }
       })
+      return res.ok
     },
     [send, settle, forget, fail, topZ],
   )
@@ -346,6 +352,7 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
         memos.delete(itemId)
         return { ...prev, memos }
       })
+      return res.ok
     },
     [send, settle, forget, fail],
   )
@@ -362,16 +369,20 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
         deleting.delete(itemId)
         return { ...prev, deleting }
       })
+      return res.ok || res.error === 'not_found'
     },
     [send, forget, fail],
   )
 
-  /** 링크 요약 카드 추가 (F-03). REST로 처리되고, 서버가 다른 참여자에게도 card:added로 알린다 */
+  /**
+   * 링크 요약 미리보기를 확인한 뒤 카드로 올린다 (F-03, B12). REST로 처리되고,
+   * 서버가 다른 참여자에게도 card:added로 알린다
+   */
   const addLink = useCallback(
     async (url: string, x: number, y: number) => {
-      const result = await postLink(boardId, url, x, y)
-      settle(result.item)
-      return result
+      const item = await confirmLink(boardId, url, x, y)
+      settle(item)
+      return item
     },
     [boardId, settle],
   )
@@ -448,6 +459,11 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     [send, fail],
   )
 
+  /** 연결이 끊긴 동안 "다시 연결" (B11) — 자동 재연결을 기다리지 않고 바로 시도 */
+  const reconnect = useCallback(() => {
+    socketRef.current?.connect()
+  }, [])
+
   const saving = overlays.adds.size + overlays.moves.size + overlays.memos.size + overlays.deleting.size > 0
 
   return {
@@ -471,5 +487,6 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
     analyze,
     dismiss,
     arrange,
+    reconnect,
   }
 }

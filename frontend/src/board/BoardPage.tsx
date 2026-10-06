@@ -1,131 +1,318 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../api/client'
-import type { FeedArticle } from '../feed/types'
+import { useAuth } from '../auth/useAuth'
 import { DigestLink } from '../digests/DigestLink'
+import { CATEGORY_LABELS, type FeedArticle } from '../feed/types'
 import { useNow, useToast } from '../ui/hooks'
-import { clusterQuota, getInvite, inviteUrl, linkQuota, reissueInvite, type Invite } from './api'
+import { Icon } from '../ui/Icon'
+import { clusterQuota, linkQuota } from './api'
 import { AskPanel } from './AskPanel'
-import { BoardCanvas, type ClusterAction } from './BoardCanvas'
-import { BoardMenu, MembersButton } from './BoardManage'
-import { MEMO, MEMO_FONT, clearMeasureCache, fitView, toBoard, zoomAtCenter, type View } from './cardLayout'
+import { BoardCanvas, DRAFT_MEMO_ID, type ClusterAction, type MemoEdit, type Tool } from './BoardCanvas'
+import { BoardNameDialog, DeleteBoardDialog, LeaveBoardDialog } from './BoardDialogs'
+import { LinkDialog, MembersDialog } from './BoardModals'
+import { AiPanel, ArticleDetail, SidePanel, type AiState, type DetailArticle } from './BoardPanels'
+import { ZOOM_STEP, categoryLabel, centerOn, fitView, toBoard, zoomAt, type View } from './cardLayout'
 import { sourceDiversity } from './diversity'
 import { FeedPanel } from './FeedPanel'
-import { useBoardSync, type BoardStatus } from './useBoardSync'
+import { ROLE_LABEL } from './roles'
+import type { BoardItem } from './types'
+import { useBoardSync, type ViewItem } from './useBoardSync'
 import './BoardPage.css'
 
-type ZoomMode = 'fit' | 0.8 | 1 | 'custom'
+type Right =
+  | { kind: 'detail'; itemId: string }
+  | { kind: 'feed'; article: FeedArticle }
+  | { kind: 'ai' }
+  | { kind: 'ask' }
+type Dialog = 'rename' | 'delete' | 'leave' | 'members' | 'link' | null
 
-const STATUS_TEXT: Record<Exclude<BoardStatus, 'gone'>, string> = {
-  connecting: '불러오는 중…',
-  ready: '자동 저장됨',
-  reconnecting: '연결 끊김 — 다시 연결하는 중',
+/** 이보다 좁으면 보드를 편집하지 않는다 */
+const MIN_WIDTH = 760
+/** 이보다 좁으면 양쪽 패널을 함께 열지 않는다 (캔버스가 너무 좁아지지 않게) */
+const BOTH_PANELS_WIDTH = 1280
+
+const feedDetail = (a: FeedArticle): DetailArticle => ({
+  title: a.title,
+  source: a.source,
+  category: CATEGORY_LABELS[a.category] ?? a.category,
+  publishedAt: a.publishedAt,
+  collectedAt: a.collectedAt,
+  description: a.description,
+  originalLink: a.originalLink,
+  submitted: false,
+})
+
+const itemDetail = (item: BoardItem): DetailArticle | null =>
+  item.article && {
+    title: item.article.title,
+    source: item.article.source,
+    category: categoryLabel(item),
+    publishedAt: item.article.publishedAt,
+    collectedAt: item.article.collectedAt,
+    description: item.article.description,
+    originalLink: item.article.originalLink,
+    submitted: item.article.submitted,
+  }
+
+function useViewportWidth() {
+  const [width, setWidth] = useState(() => window.innerWidth)
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return width
 }
 
-/** 협업 보드 화면 (F-05). 디자인 목업의 협업 보드 · 캔버스 variant A(여유) */
+/** 협업 보드 (F-05, 보라 테마 프로토타입) */
 export function BoardPage() {
   const { boardId = '' } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { user } = useAuth()
   const toast = useToast()
-  const board = useBoardSync(boardId, { onError: toast.show })
+  const showToast = toast.show
+  const [syncFailed, setSyncFailed] = useState(false)
+  const onError = useCallback(
+    (message: string) => {
+      setSyncFailed(true)
+      showToast(message, { tone: 'err' })
+    },
+    [showToast],
+  )
+  const board = useBoardSync(boardId, { onError })
   const now = useNow(30_000)
+  const vw = useViewportWidth()
 
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 })
-  const [zoomMode, setZoomMode] = useState<ZoomMode>('fit')
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  const [heights, setHeights] = useState<Map<string, number>>(new Map())
+  const [tool, setTool] = useState<Tool>('select')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  /** 연결선 (F-10): 선택한 선, 긋기 모드, 긋기에서 먼저 고른 카드 */
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
   const [connectMode, setConnectMode] = useState(false)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
-  const [fontsVersion, setFontsVersion] = useState(0)
+  const [memoEdit, setMemoEdit] = useState<MemoEdit | null>(null)
+  const [draftAt, setDraftAt] = useState<{ x: number; y: number } | null>(null)
+  const [newsOpen, setNewsOpen] = useState(() => window.innerWidth >= 1100)
+  const [right, setRight] = useState<Right | null>(null)
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const [srcOpen, setSrcOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [linkRemaining, setLinkRemaining] = useState<number | null>(null)
-  const [analyzing, setAnalyzing] = useState(false)
   const [clusterRemaining, setClusterRemaining] = useState<number | null>(null)
-  const [askOpen, setAskOpen] = useState(false)
+  const [aiState, setAiState] = useState<AiState>('idle')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [analyzedIds, setAnalyzedIds] = useState<Set<string> | null>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+  const srcRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const locked = board.status !== 'ready'
+  const members = useMemo(() => new Map(board.members.map((m) => [m.userId, m])), [board.members])
+  const articles = useMemo(() => board.items.filter((i) => i.type === 'article' && !i.id.startsWith('tmp-')), [board.items])
+  const owner = board.role === 'owner'
 
   useEffect(() => {
     clusterQuota(boardId)
       .then(setClusterRemaining)
       .catch(() => setClusterRemaining(null))
-  }, [boardId])
-
-  useEffect(() => {
     linkQuota(boardId)
       .then(setLinkRemaining)
       .catch(() => setLinkRemaining(null))
   }, [boardId])
 
-  const members = useMemo(() => new Map(board.members.map((m) => [m.userId, m])), [board.members])
-
-  // 글꼴이 로드되면 글자 크기를 다시 잰다 (Konva는 캔버스에 직접 그려서 글꼴 로드를 스스로 알지 못함)
-  useEffect(() => {
-    let cancelled = false
-    void document.fonts?.ready.then(() => {
-      if (cancelled) return
-      clearMeasureCache()
-      setFontsVersion((v) => v + 1)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // 처음 들어왔을 때와 "맞춤"일 때 카드가 모두 보이게 맞춘다
-  const fittedOnce = useRef(false)
-  useEffect(() => {
-    if (board.status !== 'ready' || !canvasSize.width) return
-    if (zoomMode === 'fit' && (!fittedOnce.current || fontsVersion)) {
-      fittedOnce.current = true
-      setView(fitView(board.items, canvasSize.width, canvasSize.height))
-    }
-    // 카드가 바뀔 때마다 다시 맞추지는 않는다 (보고 있던 화면이 움직이지 않도록)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board.status, canvasSize, fontsVersion])
-
-  const onSize = useCallback((width: number, height: number) => setCanvasSize({ width, height }), [])
-
-  const setZoom = (mode: ZoomMode) => {
-    setZoomMode(mode)
-    if (mode === 'fit') setView(fitView(board.items, canvasSize.width, canvasSize.height))
-    else if (mode !== 'custom') setView((v) => zoomAtCenter(v, mode, canvasSize.width, canvasSize.height))
+  // 새 변경을 저장하기 시작하면 "저장하지 못했어요" 표시를 지운다
+  const [wasSaving, setWasSaving] = useState(board.saving)
+  if (wasSaving !== board.saving) {
+    setWasSaving(board.saving)
+    if (board.saving && syncFailed) setSyncFailed(false)
   }
 
-  /** 지금 보고 있는 화면 가운데 근처 (겹치지 않게 조금씩 흩뜨림) */
+  // 패널: 좁은 화면에서는 한쪽만 연다
+  const openRight = useCallback(
+    (next: Right) => {
+      setRight(next)
+      if (vw < BOTH_PANELS_WIDTH) setNewsOpen(false)
+    },
+    [vw],
+  )
+  const toggleNews = () => {
+    setNewsOpen((open) => {
+      if (!open && vw < BOTH_PANELS_WIDTH) setRight(null)
+      return !open
+    })
+  }
+  const [lastVw, setLastVw] = useState(vw)
+  if (lastVw !== vw) {
+    setLastVw(vw)
+    if (vw < BOTH_PANELS_WIDTH && newsOpen && right) setNewsOpen(false)
+  }
+
+  const onHeight = useCallback((id: string, h: number) => {
+    setHeights((prev) => (prev.get(id) === h ? prev : new Map(prev).set(id, h)))
+  }, [])
+  const onSize = useCallback((width: number, height: number) => {
+    setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }))
+  }, [])
+
+  const fit = useCallback(() => setView(fitView(board.items, heights, size.width, size.height)), [board.items, heights, size])
+
+  // 처음 들어왔을 때 카드가 모두 보이게 맞춘다 (뉴스 화면에서 고른 카드가 있으면 그 카드로)
+  const wantSelect = (location.state as { select?: string } | null)?.select ?? null
+  const [fitted, setFitted] = useState(false)
+  useEffect(() => {
+    if (fitted || board.status !== 'ready' || !size.width) return
+    const target = wantSelect ? board.items.find((i) => i.id === wantSelect) : undefined
+    const timer = setTimeout(() => {
+      setFitted(true)
+      if (target) {
+        setSelectedId(target.id)
+        setView((v) => centerOn({ ...v, scale: 1 }, target.x, target.y, size.width, size.height))
+      } else setView(fitView(board.items, heights, size.width, size.height))
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [fitted, board.status, board.items, heights, size, wantSelect])
+
+  const zoomBy = (factor: number) => setView((v) => zoomAt(v, v.scale * factor, size.width / 2, size.height / 2))
+
+  /** 지금 보고 있는 화면 가운데 근처 (겹치지 않게 조금씩 비켜 놓음) */
   const viewCenter = () => {
-    const c = toBoard(view, canvasSize.width / 2, canvasSize.height / 2)
-    return { x: Math.round(c.x + (Math.random() - 0.5) * 120), y: Math.round(c.y + (Math.random() - 0.5) * 90) }
+    const c = toBoard(view, size.width / 2, size.height / 2)
+    const n = board.items.length % 5
+    return { x: Math.round(c.x + n * 24 - 48), y: Math.round(c.y + n * 24 - 48) }
   }
 
   const addArticle = (article: FeedArticle, x?: number, y?: number) => {
+    if (locked) return
     const at = x === undefined || y === undefined ? viewCenter() : { x: Math.round(x), y: Math.round(y) }
+    const dup = board.items.some((i) => i.articleId === article.id)
     void board.addCard({ type: 'article', article }, at.x, at.y).then((item) => {
-      if (item) {
-        setSelectedId(item.id)
-        toast.show('보드에 카드가 추가되었습니다')
-      }
+      if (!item) return
+      setSelectedId(item.id)
+      showToast(dup ? '이 보드에 이미 있는 기사예요. 카드를 한 장 더 추가했어요.' : '보드에 기사를 추가했어요.', { tone: dup ? 'info' : 'ok' })
     })
   }
 
-  /** 링크 요약 카드는 지금 보는 화면 가운데에 놓는다 */
-  const submitLink = async (url: string) => {
-    const at = viewCenter()
-    try {
-      const result = await board.addLink(url, at.x, at.y)
-      setLinkRemaining(result.remaining)
-      setSelectedId(result.item.id)
-      toast.show(
-        result.reused
-          ? '이미 저장된 기사를 카드로 추가했습니다'
-          : result.summarized
-            ? 'AI 요약 카드를 추가했습니다'
-            : '본문을 읽지 못해 페이지 설명으로 카드를 만들었습니다',
-      )
-    } catch (error) {
-      linkQuota(boardId).then(setLinkRemaining).catch(() => {})
-      throw error
+  // ---------- 메모 (카드 안에서 편집, B9) ----------
+  const addMemo = () => {
+    if (locked) return
+    const c = viewCenter()
+    setDraftAt(c)
+    setSelectedId(DRAFT_MEMO_ID)
+    setTool('select')
+    setMemoEdit({ id: DRAFT_MEMO_ID, text: '', saving: false, error: null })
+  }
+  const editMemo = (id: string) => {
+    if (locked) return
+    const item = board.items.find((i) => i.id === id)
+    setDraftAt(null)
+    setMemoEdit({ id, text: item?.content ?? '', saving: false, error: null })
+  }
+  const cancelMemo = () => {
+    if (memoEdit?.id === DRAFT_MEMO_ID) setSelectedId(null)
+    setMemoEdit(null)
+    setDraftAt(null)
+  }
+  const saveMemo = async () => {
+    if (!memoEdit || memoEdit.saving) return
+    const text = memoEdit.text.trim()
+    if (!text) return setMemoEdit({ ...memoEdit, error: 'empty' })
+    setMemoEdit({ ...memoEdit, saving: true, error: null })
+    if (memoEdit.id === DRAFT_MEMO_ID && draftAt) {
+      const item = await board.addCard({ type: 'memo', content: text }, draftAt.x, draftAt.y)
+      if (item) {
+        setMemoEdit(null)
+        setDraftAt(null)
+        setSelectedId(item.id)
+      } else setMemoEdit((m) => m && { ...m, saving: false, error: 'fail' })
+      return
+    }
+    const ok = await board.updateMemo(memoEdit.id, text)
+    if (ok) setMemoEdit(null)
+    else setMemoEdit((m) => m && { ...m, saving: false, error: 'fail' })
+  }
+
+  const deleteCard = async (id: string) => {
+    if (memoEdit?.id === id) setMemoEdit(null)
+    const ok = await board.deleteCard(id)
+    if (ok) {
+      setSelectedId((s) => (s === id ? null : s))
+      showToast('카드를 삭제했어요.', { tone: 'ok' })
     }
   }
+
+  // ---------- 연결선 (F-10, A1) ----------
+  const toggleConnectMode = () => {
+    setConnectMode((on) => !on)
+    setConnectFrom(null)
+    setSelectedId(null)
+    setSelectedConnectionId(null)
+  }
+  /** 첫 카드를 고르고, 두 번째 카드를 누르면 잇는다 (같은 카드를 다시 누르면 고르기 취소) */
+  const pickCard = (id: string) => {
+    if (!connectFrom) return setConnectFrom(id)
+    if (connectFrom === id) return setConnectFrom(null)
+    const from = connectFrom
+    setConnectFrom(null)
+    void board.addConnection(from, id).then((ok) => ok && showToast('카드를 연결했어요.', { tone: 'ok' }))
+  }
+
+  // ---------- AI로 정리 (F-08, B13) ----------
+  const analyze = async () => {
+    openRight({ kind: 'ai' })
+    if (articles.length < 2 || locked) return
+    setAiState('analyzing')
+    setHighlightId(null)
+    try {
+      const result = await board.analyze()
+      setAnalyzedIds(new Set(articles.map((a) => a.id)))
+      setClusterRemaining(result.remaining)
+      setAiState('idle')
+    } catch (error) {
+      setAiState('fail')
+      if (error instanceof ApiError && error.status === 429) showToast(error.message, { tone: 'err' })
+      clusterQuota(boardId)
+        .then(setClusterRemaining)
+        .catch(() => {})
+    }
+  }
+  const openAi = () => {
+    if (right?.kind === 'ai') return setRight(null)
+    openRight({ kind: 'ai' })
+    if (board.clusters.length === 0 && analyzedIds === null && articles.length >= 2) void analyze()
+  }
+  const arrangeAll = async (action: 'arrange' | 'restore') => {
+    setAiBusy(true)
+    const byId = new Map(board.items.map((i) => [i.id, i]))
+    let moved = 0
+    for (const cluster of board.clusters) {
+      const members = cluster.itemIds.map((id) => byId.get(id)).filter(Boolean) as ViewItem[]
+      const need = action === 'arrange' ? members.some((i) => !i.arranged) : members.some((i) => i.arranged)
+      if (need) moved += await board.arrange(cluster.id, action)
+    }
+    setAiBusy(false)
+    if (moved > 0) {
+      showToast(action === 'arrange' ? '이슈별로 카드를 정렬했어요.' : '자동 정렬 전 위치로 되돌렸어요.', { tone: 'ok' })
+      setTimeout(() => setView(fitView(board.items, heights, size.width, size.height)), 60)
+    } else if (action === 'restore') showToast('되돌릴 카드가 없어요. 정렬 뒤 직접 옮긴 카드는 그대로 둬요.', { tone: 'info' })
+  }
+  const dismissAll = async () => {
+    for (const cluster of board.clusters) await board.dismiss(cluster.id)
+    setHighlightId(null)
+    setAnalyzedIds(null)
+    setRight(null)
+  }
+  const onClusterAction = async (clusterId: string, action: ClusterAction) => {
+    if (action === 'dismiss') return void board.dismiss(clusterId)
+    const count = await board.arrange(clusterId, action)
+    if (action === 'restore' && count === 0) showToast('되돌릴 카드가 없어요. 정렬 뒤 직접 옮긴 카드는 그대로 둬요.', { tone: 'info' })
+  }
+  const highlight = useMemo(() => {
+    const cluster = highlightId ? board.clusters.find((c) => c.id === highlightId) : null
+    return right?.kind === 'ai' && cluster ? new Set(cluster.itemIds) : null
+  }, [highlightId, board.clusters, right])
 
   /** 질의응답 출처 → 그 카드를 선택하고 지금 배율 그대로 화면 가운데로 (F-12) */
   const showCard = (itemId: string) => {
@@ -135,400 +322,516 @@ export function BoardPage() {
     setConnectFrom(null)
     setSelectedConnectionId(null)
     setSelectedId(item.id)
-    setZoomMode('custom')
-    setView((v) => ({ ...v, x: canvasSize.width / 2 - item.x * v.scale, y: canvasSize.height / 2 - item.y * v.scale }))
+    setView((v) => centerOn(v, item.x, item.y, size.width, size.height))
     return true
   }
 
-  /** AI 이슈 묶기 (F-08) */
-  const analyze = async () => {
-    setAnalyzing(true)
-    try {
-      const result = await board.analyze()
-      setClusterRemaining(result.remaining)
-      toast.show(
-        result.clusters.length === 0
-          ? '아직 같은 이슈로 묶을 만한 기사가 없습니다'
-          : `이슈 ${result.clusters.length}개로 묶었습니다${result.excluded ? ` (분석 못 한 기사 ${result.excluded}개)` : ''}`,
-      )
-    } catch (error) {
-      toast.show(error instanceof ApiError ? error.message : 'AI 분석에 실패했습니다')
-      clusterQuota(boardId).then(setClusterRemaining).catch(() => {})
-    } finally {
-      setAnalyzing(false)
-    }
-  }
-
-  const onClusterAction = (clusterId: string, action: ClusterAction) => {
-    if (action === 'dismiss') {
-      void board.dismiss(clusterId).then(() => toast.show('AI 제안을 무시했습니다'))
-      return
-    }
-    void board.arrange(clusterId, action).then((count) => {
-      if (action === 'restore' && count === 0) toast.show('되돌릴 카드가 없습니다 (직접 옮긴 카드는 그 자리에 둡니다)')
-    })
-  }
-
-  const articleCount = board.items.filter((i) => i.type === 'article' && !i.id.startsWith('tmp-')).length
-
-  const addMemo = () => {
-    const at = viewCenter()
-    void board.addCard({ type: 'memo', content: '' }, at.x, at.y).then((item) => {
-      if (item) {
-        setSelectedId(item.id)
-        setEditing({ id: item.id, text: '' })
-      }
-    })
-  }
-
-  const removeSelected = useCallback(() => {
-    if (selectedConnectionId) {
-      void board.deleteConnection(selectedConnectionId)
-      setSelectedConnectionId(null)
-      return
-    }
-    if (!selectedId || selectedId.startsWith('tmp-')) return
-    void board.deleteCard(selectedId)
-    setSelectedId(null)
-  }, [selectedId, selectedConnectionId, board])
-
-  const toggleConnectMode = () => {
-    setConnectMode((on) => !on)
-    setConnectFrom(null)
-    setSelectedId(null)
-    setSelectedConnectionId(null)
-  }
-
-  /** 연결선 긋기: 첫 카드를 고르고, 두 번째 카드를 누르면 잇는다 (같은 카드를 다시 누르면 고르기 취소) */
-  const pickCard = (id: string) => {
-    if (!connectFrom) return setConnectFrom(id)
-    if (connectFrom === id) return setConnectFrom(null)
-    const from = connectFrom
-    setConnectFrom(null)
-    void board.addConnection(from, id).then((ok) => ok && toast.show('카드를 연결했습니다'))
-  }
-
-  // Delete·Backspace로 선택한 카드 삭제 (입력 중일 때는 제외)
+  // ---------- 키보드 ----------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return
-      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedId || selectedConnectionId)) {
+      const target = e.target as HTMLElement
+      if (target.closest('input, textarea, select, [role=dialog]')) return
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedConnectionId) {
         e.preventDefault()
-        removeSelected()
+        void board.deleteConnection(selectedConnectionId)
+        setSelectedConnectionId(null)
       }
       if (e.key === 'Escape') {
         setSelectedId(null)
         setSelectedConnectionId(null)
         setConnectMode(false)
         setConnectFrom(null)
+        setSrcOpen(false)
+        setMenuOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, selectedConnectionId, removeSelected])
+  }, [selectedConnectionId, board])
 
-  const editingItem = editing ? board.items.find((i) => i.id === editing.id) : undefined
-  const saveMemo = () => {
-    if (!editing) return
-    const current = board.items.find((i) => i.id === editing.id)
-    if (current && (current.content ?? '') !== editing.text) void board.updateMemo(editing.id, editing.text)
-    setEditing(null)
-  }
+  // 머리글 팝오버는 바깥을 누르면 닫는다
+  useEffect(() => {
+    if (!srcOpen && !menuOpen) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (srcOpen && srcRef.current && !srcRef.current.contains(t)) setSrcOpen(false)
+      if (menuOpen && menuRef.current && !menuRef.current.contains(t)) setMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [srcOpen, menuOpen])
 
-  if (board.status === 'gone') {
-    return (
-      <div className="board-gone">
-        <p className="serif board-gone__title">{board.goneReason ?? '보드를 열 수 없습니다'}</p>
-        <Link className="btn" to="/">
-          보드 목록으로
-        </Link>
-      </div>
-    )
-  }
+  const items: ViewItem[] = useMemo(() => {
+    if (!draftAt || memoEdit?.id !== DRAFT_MEMO_ID) return board.items
+    const draft: ViewItem = {
+      id: DRAFT_MEMO_ID,
+      type: 'memo',
+      articleId: null,
+      article: null,
+      content: '',
+      imageKey: null,
+      x: draftAt.x,
+      y: draftAt.y,
+      rotation: 0,
+      zIndex: Number.MAX_SAFE_INTEGER - 1,
+      createdBy: user?.id ?? null,
+      updatedAt: '',
+      version: 0,
+      arranged: false,
+      pending: false,
+    }
+    return [...board.items, draft]
+  }, [board.items, draftAt, memoEdit?.id, user?.id])
 
-  const statusText = board.status === 'ready' && board.saving ? '저장 중…' : STATUS_TEXT[board.status]
+  // 보드가 지워졌거나 내보내졌을 때는 화면 위에 잠금 안내를 띄운다 (B11)
+  const gone = board.status === 'gone'
+
+  const sync = gone
+    ? { text: '보드를 열 수 없어요', tone: 'err' }
+    : board.status === 'connecting'
+      ? { text: '보드 상태 확인 중', tone: 'wait' }
+      : board.status === 'reconnecting'
+        ? { text: '연결이 끊겼어요 · 다시 연결 중', tone: 'warn' }
+        : board.saving
+          ? { text: '변경 저장 중', tone: 'wait' }
+          : syncFailed
+            ? { text: '변경을 저장하지 못했어요', tone: 'err' }
+            : { text: '동기화됨', tone: 'ok' }
+
+  const diversity = useMemo(() => sourceDiversity(board.items), [board.items])
+  const detailItem = right?.kind === 'detail' ? board.items.find((i) => i.id === right.itemId) : undefined
+  const rightTitle = right?.kind === 'ai' ? 'AI 정리' : right?.kind === 'ask' ? '보드에 질문하기' : '기사 미리보기'
 
   return (
-    <div className="board-page">
-      <header className="board-header">
-        <Link to="/" className="board-header__brand serif">
-          모여봄
+    <div className="board">
+      <header className="board__header">
+        <Link to="/" className="icon-btn" aria-label="내 보드로 돌아가기" title="내 보드로 돌아가기">
+          <Icon name="back" />
         </Link>
-        <div className="board-header__divider" />
-        <div className="board-header__titles">
-          <h1 className="board-header__title serif">{board.title || '보드'}</h1>
-          <div className={`board-header__sub${board.status === 'reconnecting' ? ' board-header__sub--warn' : ''}`}>
-            공동 리서치 보드 · {statusText}
+        <div className="board__titles">
+          <h1 title={board.title}>{board.title || '보드'}</h1>
+          {board.role && <span className={`badge${owner ? '' : ' badge--neutral'}`}>{ROLE_LABEL[board.role]}</span>}
+          <span className={`board__sync board__sync--${sync.tone}`} role="status" aria-live="polite">
+            <span className="status-dot" aria-hidden="true" />
+            {sync.text}
+          </span>
+        </div>
+        <div className="board__actions">
+          <DigestLink className="board__digest" />
+          <div className="board__pop" ref={srcRef}>
+            <button
+              type="button"
+              className={`board__head-btn${srcOpen ? ' board__head-btn--on' : ''}`}
+              onClick={() => setSrcOpen((v) => !v)}
+              aria-expanded={srcOpen}
+              title="보드 기사들의 언론사 구성"
+            >
+              <Icon name="bars" />
+              출처 분포
+            </button>
+            {srcOpen && (
+              <div className="board__popover" role="dialog" aria-label="출처 분포">
+                <div className="board__popover-head">
+                  <b>출처 분포</b>
+                  <span>기사 {diversity?.total ?? articles.length}건</span>
+                </div>
+                {!diversity ? (
+                  <p className="board__popover-text">기사를 조금 더 모으면 출처 분포를 확인할 수 있어요.</p>
+                ) : (
+                  <>
+                    <ul className="source-rows">
+                      {diversity.sources.slice(0, 6).map((s) => (
+                        <li key={s.source}>
+                          <div>
+                            <b>{s.source}</b>
+                            <span>
+                              {s.count}건 · {Math.round(s.ratio * 100)}%
+                            </span>
+                          </div>
+                          <div className="source-rows__bar" aria-hidden="true">
+                            <span style={{ width: `${Math.round(s.ratio * 100)}%` }} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                    {diversity.sources.length > 6 && <span className="board__popover-text">그 외 {diversity.sources.length - 6}곳</span>}
+                    {diversity.skewedTo && (
+                      <p className="notice notice--warn board__popover-warn">
+                        {diversity.skewedTo} 기사가 절반 이상이에요. 다른 언론사 시각도 함께 살펴보세요.
+                      </p>
+                    )}
+                    <p className="board__popover-note">보드의 기사 카드 기준이에요. 기사 내용이나 언론사를 평가하지 않아요.</p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <button type="button" className="board__head-btn" onClick={() => setDialog('members')}>
+            <Icon name="users" />
+            참여자 {board.members.length}명
+          </button>
+          {owner && (
+            <button type="button" className="btn btn--sm" onClick={() => setDialog('members')}>
+              초대
+            </button>
+          )}
+          <div className="board__pop" ref={menuRef}>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="보드 메뉴"
+              title="보드 메뉴"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              disabled={!board.role}
+            >
+              <Icon name="more" />
+            </button>
+            {menuOpen && (
+              <div className="menu board__menu" role="menu">
+                {owner ? (
+                  <>
+                    <button type="button" role="menuitem" className="menu__item" onClick={() => (setMenuOpen(false), setDialog('rename'))}>
+                      이름 변경
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu__item menu__item--danger"
+                      onClick={() => (setMenuOpen(false), setDialog('delete'))}
+                    >
+                      보드 삭제
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" role="menuitem" className="menu__item" onClick={() => (setMenuOpen(false), setDialog('leave'))}>
+                    보드 나가기
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
-        <div className="board-header__spacer" />
-        <DigestLink className="board-header__digest" />
-        <MembersButton boardId={boardId} members={board.members} role={board.role} onMessage={toast.show} />
-        {board.role === 'owner' && <BoardMenu boardId={boardId} title={board.title} onMessage={toast.show} />}
-        {board.role === 'owner' && <InviteButton boardId={boardId} onMessage={toast.show} />}
       </header>
 
-      <div className="board-body">
-        <FeedPanel
-          onAdd={(article) => addArticle(article)}
-          onSubmitLink={submitLink}
-          linkRemaining={linkRemaining}
-          now={now}
-        />
-
-        <main className="board-main">
-          <BoardCanvas
-            items={board.items}
-            clusters={board.clusters}
-            onClusterAction={onClusterAction}
-            connections={board.connections}
-            selectedConnectionId={selectedConnectionId}
-            onSelectConnection={(id) => {
-              setSelectedConnectionId(id)
-              if (id) setSelectedId(null)
-            }}
-            connectMode={connectMode}
-            connectFrom={connectFrom}
-            onPickCard={pickCard}
-            members={members}
-            view={view}
-            onViewChange={(v) => {
-              // 사용자가 직접 옮기거나 확대하면 "맞춤"이 풀린다 (재연결 때 화면이 다시 맞춰지며 튀지 않도록)
-              setView(v)
-              setZoomMode('custom')
-            }}
-            onSize={onSize}
-            selectedId={selectedId}
-            onSelect={(id) => {
-              setSelectedId(id)
-              if (id) setSelectedConnectionId(null)
-            }}
-            onMoveEnd={(id, x, y) => void board.moveCard(id, x, y)}
-            onDragMove={board.dragCard}
-            onDropArticle={(article, x, y) => addArticle(article, x, y)}
-            onEditMemo={(id) => {
-              const item = board.items.find((i) => i.id === id)
-              setEditing({ id, text: item?.content ?? '' })
-            }}
-            fontsVersion={fontsVersion}
-            now={now}
-          />
-
-          <div className="board-toolbar board-toolbar--left">
-            <button type="button" onClick={addMemo} disabled={board.status !== 'ready'}>
-              + 메모
-            </button>
-            <button
-              type="button"
-              className={connectMode ? 'is-on' : ''}
-              onClick={toggleConnectMode}
-              disabled={board.status !== 'ready'}
-              aria-pressed={connectMode}
-            >
-              연결선
-            </button>
-            <button
-              type="button"
-              onClick={removeSelected}
-              disabled={!selectedConnectionId && (!selectedId || selectedId.startsWith('tmp-'))}
-            >
-              선택 삭제
-            </button>
-            <button
-              type="button"
-              onClick={() => void analyze()}
-              disabled={board.status !== 'ready' || analyzing || articleCount < 2}
-              title={
-                articleCount < 2
-                  ? '기사 카드가 2개 이상 있어야 합니다'
-                  : clusterRemaining !== null
-                    ? `오늘 남은 분석 ${clusterRemaining}회`
-                    : undefined
-              }
-            >
-              {analyzing ? 'AI 분석 중…' : 'AI 이슈 묶기'}
-            </button>
-            <button type="button" className={askOpen ? 'is-on' : ''} onClick={() => setAskOpen((v) => !v)} aria-pressed={askOpen}>
-              질문하기
-            </button>
-          </div>
-          <div className="board-toolbar board-toolbar--right">
-            {(['fit', 0.8, 1] as const).map((mode) => (
-              <button key={mode} type="button" className={zoomMode === mode ? 'is-on' : ''} onClick={() => setZoom(mode)}>
-                {mode === 'fit' ? '맞춤' : `${mode * 100}%`}
-              </button>
-            ))}
-          </div>
-          <DiversityPanel items={board.items} />
-          <AskPanel
-            boardId={boardId}
-            open={askOpen}
-            onClose={() => setAskOpen(false)}
-            onShowCard={showCard}
-            hasArticles={articleCount > 0}
-          />
-          <div className="board-hint">
-            {connectMode
-              ? connectFrom
-                ? '이을 카드를 누르세요 · Esc로 그만두기'
-                : '연결할 첫 카드를 누르세요 · Esc로 그만두기'
-              : board.status === 'connecting'
-              ? '보드를 불러오는 중…'
-              : board.items.length === 0
-                ? '왼쪽 피드에서 기사를 끌어다 놓거나 "+ 메모"로 시작하세요'
-                : '카드 드래그로 이동 · 빈 곳 드래그로 캔버스 이동 · 메모 더블클릭으로 편집'}
-          </div>
-
-          {editing && editingItem && (
-            <textarea
-              className="memo-editor"
-              autoFocus
-              maxLength={2000}
-              value={editing.text}
-              placeholder="메모를 입력하세요"
-              style={{
-                left: view.x + (editingItem.x - MEMO.width / 2) * view.scale,
-                top: view.y + (editingItem.y - MEMO.height / 2) * view.scale,
-                width: MEMO.width * view.scale,
-                height: MEMO.height * view.scale,
-                fontSize: MEMO_FONT.size * view.scale,
-              }}
-              onChange={(e) => setEditing({ id: editing.id, text: e.target.value })}
-              onBlur={saveMemo}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setEditing(null)
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveMemo()
-              }}
+      {vw < MIN_WIDTH ? (
+        <div className="board__narrow">
+          <h2>보드는 넓은 화면에서 편집할 수 있어요.</h2>
+          <p>데스크톱 브라우저에서 열어 주세요.</p>
+          <Link className="btn btn--ghost" to="/">
+            내 보드로
+          </Link>
+        </div>
+      ) : (
+        <div className="board__body">
+          {newsOpen && (
+            <FeedPanel
+              onAdd={(article) => addArticle(article)}
+              onOpen={(article) => openRight({ kind: 'feed', article })}
+              onCollapse={toggleNews}
+              locked={locked}
+              now={now}
             />
           )}
-        </main>
-      </div>
+
+          <section className="board__canvas" aria-label="보드 캔버스">
+            {board.status === 'connecting' && (
+              <div className="board__loading" role="status">
+                보드를 불러오는 중…
+              </div>
+            )}
+            <BoardCanvas
+              items={items}
+              members={members}
+              view={view}
+              onViewChange={setView}
+              onSize={onSize}
+              heights={heights}
+              onHeight={onHeight}
+              tool={tool}
+              locked={locked}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id)
+                if (memoEdit && id !== memoEdit.id) cancelMemo()
+              }}
+              onMoveEnd={(id, x, y) => void board.moveCard(id, x, y)}
+              onDragMove={board.dragCard}
+              onDropArticle={(article, x, y) => addArticle(article, x, y)}
+              onDetail={(id) => openRight({ kind: 'detail', itemId: id })}
+              onEditMemo={editMemo}
+              onDeleteCard={(id) => void deleteCard(id)}
+              memoEdit={memoEdit}
+              onMemoChange={(text) => setMemoEdit((m) => m && { ...m, text, error: null })}
+              onMemoSave={() => void saveMemo()}
+              onMemoCancel={cancelMemo}
+              highlight={highlight}
+              clusters={board.clusters}
+              onClusterAction={(id, action) => void onClusterAction(id, action)}
+              connections={board.connections}
+              selectedConnectionId={selectedConnectionId}
+              onSelectConnection={(id) => {
+                setSelectedConnectionId(id)
+                if (id) setSelectedId(null)
+              }}
+              connectMode={connectMode}
+              connectFrom={connectFrom}
+              onPickCard={pickCard}
+              now={now}
+            />
+
+            {board.status === 'ready' && board.items.length === 0 && !draftAt && (
+              <div className="board__empty">
+                <div>
+                  <h2>아직 자료가 없어요.</h2>
+                  <p>왼쪽 뉴스에서 기사를 추가하거나 메모로 생각을 남겨 보세요.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="board__top" data-ui>
+              {!newsOpen && (
+                <button type="button" className="board__news-btn" onClick={toggleNews}>
+                  <Icon name="panel" />
+                  뉴스
+                </button>
+              )}
+              <div className="toolbar" role="toolbar" aria-label="보드 도구">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setTool('select')}
+                  aria-label="선택"
+                  title="선택 (카드 이동)"
+                  aria-pressed={tool === 'select'}
+                >
+                  <Icon name="cursor" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setTool('pan')}
+                  aria-label="화면 이동"
+                  title="화면 이동 (빈 곳 드래그로도 이동)"
+                  aria-pressed={tool === 'pan'}
+                >
+                  <Icon name="hand" />
+                </button>
+                <span className="toolbar__sep" aria-hidden="true" />
+                <button type="button" className="toolbar__btn" onClick={addMemo} disabled={locked}>
+                  <Icon name="memo" />
+                  메모
+                </button>
+                <button type="button" className="toolbar__btn" onClick={() => setDialog('link')} disabled={locked}>
+                  <Icon name="link" />
+                  링크
+                </button>
+                {/* 사진 카드는 서버 배포 때(S3) 함께 만든다 — 그전까지는 준비 중으로 표시 */}
+                <button type="button" className="toolbar__btn" disabled title="사진 카드는 준비 중이에요.">
+                  <Icon name="image" />
+                  사진
+                </button>
+                <button
+                  type="button"
+                  className={`toolbar__btn${connectMode ? ' toolbar__btn--on' : ''}`}
+                  onClick={toggleConnectMode}
+                  disabled={locked}
+                  aria-pressed={connectMode}
+                  title="두 카드를 차례로 눌러 잇기"
+                >
+                  <Icon name="connect" />
+                  연결선
+                </button>
+                <span className="toolbar__sep" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={`toolbar__btn toolbar__btn--ai${right?.kind === 'ai' ? ' toolbar__btn--on' : ''}`}
+                  onClick={openAi}
+                  disabled={locked}
+                  aria-pressed={right?.kind === 'ai'}
+                >
+                  <Icon name="group" />
+                  AI로 정리
+                </button>
+                <button
+                  type="button"
+                  className={`toolbar__btn toolbar__btn--ai${right?.kind === 'ask' ? ' toolbar__btn--on' : ''}`}
+                  onClick={() => (right?.kind === 'ask' ? setRight(null) : openRight({ kind: 'ask' }))}
+                  aria-pressed={right?.kind === 'ask'}
+                >
+                  <Icon name="ask" />
+                  질문하기
+                </button>
+              </div>
+            </div>
+
+            {connectMode && (
+              <div className="board__mode" role="status" data-ui>
+                {connectFrom ? '이을 카드를 누르세요' : '연결할 첫 카드를 누르세요'} · Esc로 그만두기
+                <button type="button" className="text-btn" onClick={toggleConnectMode}>
+                  그만두기
+                </button>
+              </div>
+            )}
+
+            {board.status === 'reconnecting' && (
+              <div className="board__offline" role="alert" data-ui>
+                <Icon name="alert" />
+                <span>연결이 끊겼어요. 다시 연결하는 동안에는 편집할 수 없어요. 연결되면 저장된 보드 상태로 맞춰요.</span>
+                <button type="button" className="btn btn--ghost btn--xs" onClick={board.reconnect}>
+                  다시 연결
+                </button>
+              </div>
+            )}
+
+            <div className="board__hint" data-ui>
+              빈 곳을 끌어 화면 이동 · Ctrl + 스크롤로 확대
+            </div>
+            <div className="zoom" role="group" aria-label="확대·축소" data-ui>
+              <button type="button" className="icon-btn" onClick={fit} aria-label="화면에 맞추기" title="화면에 맞추기">
+                <Icon name="fit" />
+              </button>
+              <span className="zoom__sep" aria-hidden="true" />
+              <button type="button" className="icon-btn" onClick={() => zoomBy(1 / ZOOM_STEP)} aria-label="축소" title="축소">
+                <Icon name="minus" />
+              </button>
+              <span className="zoom__pct" aria-live="polite">
+                {Math.round(view.scale * 100)}%
+              </span>
+              <button type="button" className="icon-btn" onClick={() => zoomBy(ZOOM_STEP)} aria-label="확대" title="확대">
+                <Icon name="plus" />
+              </button>
+            </div>
+          </section>
+
+          {right && (
+            <SidePanel
+              title={rightTitle}
+              onClose={() => {
+                setRight(null)
+                setHighlightId(null)
+              }}
+            >
+              {right.kind === 'detail' &&
+                (detailItem && itemDetail(detailItem) ? (
+                  <ArticleDetail article={itemDetail(detailItem)!} />
+                ) : (
+                  <div className="side__body">이미 삭제된 카드예요.</div>
+                ))}
+              {right.kind === 'feed' && (
+                <ArticleDetail article={feedDetail(right.article)} onAdd={() => addArticle(right.article)} locked={locked} />
+              )}
+              {right.kind === 'ai' && (
+                <AiPanel
+                  state={aiState}
+                  clusters={board.clusters}
+                  articles={articles}
+                  analyzedIds={analyzedIds}
+                  highlightId={highlightId}
+                  onToggle={(id) => setHighlightId((h) => (h === id ? null : id))}
+                  onAnalyze={() => void analyze()}
+                  onArrangeAll={() => void arrangeAll('arrange')}
+                  onRestoreAll={() => void arrangeAll('restore')}
+                  onDismissAll={() => void dismissAll()}
+                  busy={aiBusy}
+                  locked={locked}
+                  remaining={clusterRemaining}
+                />
+              )}
+              {right.kind === 'ask' && <AskPanel boardId={boardId} onShowCard={showCard} hasArticles={articles.length > 0} />}
+            </SidePanel>
+          )}
+        </div>
+      )}
+
+      {gone && (
+        <div className="modal-backdrop">
+          <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="gone-title">
+            <h2 id="gone-title" className="modal__title">
+              {board.goneReason ?? '보드를 열 수 없어요.'}
+            </h2>
+            <p className="dialog-text">
+              {board.goneReason?.includes('삭제')
+                ? '소유자가 보드를 삭제했어요. 보드의 카드와 자료도 함께 사라졌어요.'
+                : board.goneReason?.includes('내보내')
+                  ? '이 보드를 더 이상 볼 수 없어요. 다시 참여하려면 소유자에게 초대 링크를 요청해 주세요.'
+                  : '삭제되었거나 접근할 수 없는 보드예요. 필요하면 보드 소유자에게 초대 링크를 요청해 주세요.'}
+            </p>
+            <div className="modal__actions">
+              <button type="button" className="btn" data-autofocus onClick={() => navigate('/', { replace: true })}>
+                내 보드로 이동
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dialog === 'rename' && (
+        <BoardNameDialog
+          mode="rename"
+          boardId={boardId}
+          initial={board.title}
+          onClose={() => setDialog(null)}
+          onRenamed={() => {
+            setDialog(null)
+            showToast('보드 이름을 바꿨어요.', { tone: 'ok' })
+          }}
+        />
+      )}
+      {dialog === 'delete' && (
+        <DeleteBoardDialog
+          boardId={boardId}
+          title={board.title}
+          cardCount={board.items.length}
+          memberCount={board.members.length}
+          onClose={() => setDialog(null)}
+          onDeleted={() => navigate('/', { replace: true })}
+        />
+      )}
+      {dialog === 'leave' && user && (
+        <LeaveBoardDialog
+          boardId={boardId}
+          userId={user.id}
+          title={board.title}
+          onClose={() => setDialog(null)}
+          onLeft={() => navigate('/', { replace: true })}
+        />
+      )}
+      {dialog === 'members' && board.role && (
+        <MembersDialog
+          boardId={boardId}
+          title={board.title}
+          role={board.role}
+          members={board.members}
+          onClose={() => setDialog(null)}
+          onMessage={(text, tone) => showToast(text, { tone })}
+        />
+      )}
+      {dialog === 'link' && (
+        <LinkDialog
+          boardId={boardId}
+          remaining={linkRemaining}
+          onClose={() => setDialog(null)}
+          onAdd={async (url) => {
+            const at = viewCenter()
+            try {
+              const item = await board.addLink(url, at.x, at.y)
+              setSelectedId(item.id)
+              showToast('링크 기사를 보드에 추가했어요.', { tone: 'ok' })
+              linkQuota(boardId)
+                .then(setLinkRemaining)
+                .catch(() => {})
+              return true
+            } catch (e) {
+              showToast(e instanceof ApiError ? e.message : '기사를 추가하지 못했어요.', { tone: 'err' })
+              return false
+            }
+          }}
+        />
+      )}
       {toast.view}
     </div>
   )
 }
 
-/** owner만: 초대 링크 보기·복사·새로 발급 (F-07) */
-function InviteButton({ boardId, onMessage }: { boardId: string; onMessage: (text: string) => void }) {
-  const [open, setOpen] = useState(false)
-  const [invite, setInvite] = useState<Invite | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    getInvite(boardId)
-      .then(setInvite)
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : '초대 링크를 불러오지 못했습니다'))
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open, boardId])
-
-  const copy = async () => {
-    if (!invite) return
-    try {
-      await navigator.clipboard.writeText(inviteUrl(invite.token))
-      onMessage('초대 링크를 복사했습니다')
-    } catch {
-      onMessage('복사하지 못했습니다. 링크를 직접 선택해 복사해 주세요')
-    }
-  }
-
-  const reissue = async () => {
-    if (!window.confirm('새 링크를 만들면 지금 링크로는 더 이상 참여할 수 없습니다. 계속할까요?')) return
-    try {
-      setInvite(await reissueInvite(boardId))
-      onMessage('새 초대 링크를 만들었습니다')
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : '새 링크를 만들지 못했습니다')
-    }
-  }
-
-  return (
-    <div className="invite" ref={ref}>
-      <button
-        type="button"
-        className="btn"
-        onClick={() => {
-          setError(null)
-          setOpen((v) => !v)
-        }}
-        aria-expanded={open}
-      >
-        + 초대
-      </button>
-      {open && (
-        <div className="invite__panel" role="dialog" aria-label="초대 링크">
-          <div className="invite__title">초대 링크</div>
-          <p className="invite__desc">링크를 받은 사람은 로그인 후 이 보드에 편집자로 참여합니다.</p>
-          {error && <p className="invite__error">{error}</p>}
-          {invite && (
-            <>
-              <div className="invite__row">
-                <input readOnly value={inviteUrl(invite.token)} onFocus={(e) => e.target.select()} aria-label="초대 링크 주소" />
-                <button type="button" className="btn" onClick={() => void copy()}>
-                  복사
-                </button>
-              </div>
-              <div className="invite__foot">
-                <span>{new Date(invite.expiresAt).toLocaleDateString('ko-KR')}까지 사용 가능</span>
-                <button type="button" className="invite__reissue" onClick={() => void reissue()}>
-                  새 링크 발급
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** 출처 다양성 (F-11): 보드 기사가 어느 언론사에 몰려 있는지 막대로 보여 준다. 접어 둘 수 있다 */
-function DiversityPanel({ items }: { items: Parameters<typeof sourceDiversity>[0] }) {
-  const [open, setOpen] = useState(true)
-  const diversity = useMemo(() => sourceDiversity(items), [items])
-  if (!diversity) return null
-  const shown = diversity.sources.slice(0, 5)
-  const rest = diversity.sources.length - shown.length
-  return (
-    <section className="diversity" aria-label="출처 다양성">
-      <button type="button" className="diversity__head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span>출처 다양성</span>
-        <span className="diversity__count">
-          언론사 {diversity.sources.length}곳 · 기사 {diversity.total}건 {open ? '▾' : '▸'}
-        </span>
-      </button>
-      {open && (
-        <>
-          <ul className="diversity__list">
-            {shown.map((s) => (
-              <li key={s.source}>
-                <span className="diversity__name" title={s.source}>
-                  {s.source}
-                </span>
-                <span className="diversity__bar" aria-hidden="true">
-                  <span style={{ width: `${Math.round(s.ratio * 100)}%` }} />
-                </span>
-                <span className="diversity__pct">{Math.round(s.ratio * 100)}%</span>
-              </li>
-            ))}
-          </ul>
-          {rest > 0 && <div className="diversity__rest">그 외 {rest}곳</div>}
-          {diversity.skewedTo && (
-            <p className="diversity__warn">{diversity.skewedTo} 기사가 절반 이상입니다. 다른 언론사 시각도 함께 살펴보세요.</p>
-          )}
-        </>
-      )}
-    </section>
-  )
-}

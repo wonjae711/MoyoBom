@@ -1,29 +1,14 @@
-import type Konva from 'konva'
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
-import { Group, Layer, Line, Rect, Stage, Text } from 'react-konva'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import type { FeedArticle } from '../feed/types'
+import { Icon, Spinner } from '../ui/Icon'
 import {
-  ARTICLE,
-  CHIP_FONT,
-  CLUSTER,
-  CLUSTER_TEXT_FONT,
-  CLUSTER_TITLE_FONT,
-  COLORS,
-  FONT_HAND,
-  FONT_SANS,
-  MEMO,
-  MEMO_FONT,
-  META_FONT,
-  TITLE_FONT,
-  articleMeta,
-  cardSize,
+  CLUSTER_WIDTH,
+  articleTime,
+  authorName,
+  cardWidth,
   categoryLabel,
-  chipHeight,
-  clusterLayout,
-  displayRotation,
-  measureTextHeight,
-  memoMeta,
   toBoard,
+  zoomAt,
   type View,
 } from './cardLayout'
 import type { BoardCluster, BoardConnection, BoardMember } from './types'
@@ -31,35 +16,56 @@ import type { ViewItem } from './useBoardSync'
 
 /** 피드에서 끌어 온 기사를 담는 드래그 데이터 형식 */
 export const ARTICLE_DRAG_TYPE = 'application/x-moyobom-article'
+/** 아직 저장하지 않은 새 메모 카드의 id */
+export const DRAFT_MEMO_ID = 'draft-memo'
 
 export type ClusterAction = 'arrange' | 'restore' | 'dismiss'
+export type Tool = 'select' | 'pan'
+
+/** 카드 안에서 편집 중인 메모 */
+export interface MemoEdit {
+  id: string
+  text: string
+  saving: boolean
+  error: 'empty' | 'fail' | null
+}
 
 interface Props {
   items: ViewItem[]
-  /** AI 이슈 클러스터 (F-08) */
-  clusters: BoardCluster[]
-  onClusterAction: (clusterId: string, action: ClusterAction) => void
-  /** 카드 간 연결선 (F-10) */
-  connections: BoardConnection[]
-  selectedConnectionId: string | null
-  onSelectConnection: (id: string | null) => void
-  /** 연결선 긋기 모드: 카드를 누르면 선택 대신 연결 대상으로 고른다 */
-  connectMode: boolean
-  /** 연결선 긋기에서 먼저 고른 카드 */
-  connectFrom: string | null
-  onPickCard: (id: string) => void
   members: Map<string, BoardMember>
   view: View
   onViewChange: (view: View) => void
   onSize: (width: number, height: number) => void
+  /** 화면에서 잰 카드·클러스터 카드 높이 (화면 맞춤·연결선용) */
+  heights: Map<string, number>
+  onHeight: (id: string, height: number) => void
+  tool: Tool
+  /** 연결이 끊겼거나 보드에서 나가게 되어 편집할 수 없음 (B11) */
+  locked: boolean
   selectedId: string | null
   onSelect: (id: string | null) => void
   onMoveEnd: (id: string, x: number, y: number) => void
   onDragMove: (id: string, x: number, y: number) => void
   onDropArticle: (article: FeedArticle, x: number, y: number) => void
+  onDetail: (id: string) => void
   onEditMemo: (id: string) => void
-  /** 글꼴이 로드되면 바뀌는 값 — 글자 크기를 다시 재서 그린다 */
-  fontsVersion: number
+  onDeleteCard: (id: string) => void
+  memoEdit: MemoEdit | null
+  onMemoChange: (text: string) => void
+  onMemoSave: () => void
+  onMemoCancel: () => void
+  /** AI 정리 패널에서 고른 그룹의 카드 — 나머지 기사 카드는 흐리게 (B13) */
+  highlight: Set<string> | null
+  /** AI 이슈 클러스터 카드 (F-08, A4) */
+  clusters: BoardCluster[]
+  onClusterAction: (clusterId: string, action: ClusterAction) => void
+  /** 카드 간 연결선 (F-10, A1) */
+  connections: BoardConnection[]
+  selectedConnectionId: string | null
+  onSelectConnection: (id: string | null) => void
+  connectMode: boolean
+  connectFrom: string | null
+  onPickCard: (id: string) => void
   now: Date
 }
 
@@ -67,549 +73,526 @@ interface Props {
 function parseArticle(raw: string): FeedArticle | null {
   try {
     const value = JSON.parse(raw) as Partial<FeedArticle>
-    return typeof value.id === 'string' && /^\d+$/.test(value.id) && typeof value.title === 'string'
-      ? (value as FeedArticle)
-      : null
+    return typeof value.id === 'string' && /^\d+$/.test(value.id) && typeof value.title === 'string' ? (value as FeedArticle) : null
   } catch {
     return null
   }
 }
 
+const isControl = (target: EventTarget) => target instanceof Element && Boolean(target.closest('button, a, textarea, input, select, [data-ui]'))
+
+type Gesture =
+  | { kind: 'pan'; sx: number; sy: number; ox: number; oy: number; moved: boolean }
+  | { kind: 'card'; id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean }
+
 /**
- * 협업 보드 캔버스 (F-05, react-konva). 목업 variant A(여유): 차콜 배경, 흰 기사 카드, 회색 손글씨 메모.
- * - 카드 드래그: 끝나면 저장(onMoveEnd), 드래그 중에는 위치 중계(onDragMove)
- * - 빈 곳 드래그: 캔버스 이동, 휠: 확대·축소
+ * 협업 보드 캔버스 (F-05, 보라 테마 프로토타입). 카드는 화면 요소로 그리고 월드 좌표를 확대·이동으로 옮긴다.
+ * - 빈 곳 드래그 = 화면 이동, 카드 드래그 = 이동(4px 미만이면 클릭), 카드 안 버튼·링크·입력에서 시작하면 드래그 아님
+ * - Ctrl(⌘) + 휠 = 커서 위치 기준 확대·축소, 휠 = 화면 이동
  * - 피드 기사를 끌어다 놓으면 그 자리에 기사 카드 추가
- * - 메모 더블클릭: 편집, 기사 더블클릭: 원문 열기
+ * - 선택한 카드 위에 카드 메뉴(자세히·수정·삭제), 삭제는 카드 안에서 한 번 더 확인 (B8)
  */
 export function BoardCanvas(props: Props) {
-  const { items, view, onViewChange, onSize } = props
-  const containerRef = useRef<HTMLDivElement>(null)
-  const stageRef = useRef<Konva.Stage>(null)
-  const [size, setSize] = useState({ width: 0, height: 0 })
+  const { items, view, onViewChange, onSize, tool, locked, connectMode } = props
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const gesture = useRef<Gesture | null>(null)
+  const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [panning, setPanning] = useState(false)
   const [dropping, setDropping] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const viewRef = useRef(view)
+  useEffect(() => {
+    viewRef.current = view
+  })
 
   useLayoutEffect(() => {
-    const el = containerRef.current
+    const el = viewportRef.current
     if (!el) return
-    const measure = () => {
-      const width = Math.round(el.clientWidth)
-      const height = Math.round(el.clientHeight)
-      setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }))
-    }
+    const measure = () => onSize(Math.round(el.clientWidth), Math.round(el.clientHeight))
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [onSize])
 
+  // 휠: 브라우저 기본 스크롤·확대를 막아야 해서 passive가 아닌 리스너로 단다
   useEffect(() => {
-    if (size.width && size.height) onSize(size.width, size.height)
-  }, [size, onSize])
+    const el = viewportRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.target instanceof Element && e.target.closest('[data-ui]')) return
+      e.preventDefault()
+      const v = viewRef.current
+      if (e.ctrlKey || e.metaKey) {
+        const rect = el.getBoundingClientRect()
+        onViewChange(zoomAt(v, v.scale * (e.deltaY < 0 ? 1.08 : 1 / 1.08), e.clientX - rect.left, e.clientY - rect.top))
+      } else onViewChange({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [onViewChange])
 
-  const onWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault()
-    const stage = stageRef.current
-    const pointer = stage?.getPointerPosition()
-    if (!pointer) return
-    const factor = e.evt.deltaY > 0 ? 1 / 1.1 : 1.1
-    const scale = Math.min(2, Math.max(0.28, view.scale * factor))
-    const focus = toBoard(view, pointer.x, pointer.y)
-    onViewChange({ scale, x: pointer.x - focus.x * scale, y: pointer.y - focus.y * scale })
+  // 선택이 바뀌면 삭제 확인을 닫는다
+  const [lastSelected, setLastSelected] = useState(props.selectedId)
+  if (lastSelected !== props.selectedId) {
+    setLastSelected(props.selectedId)
+    setConfirmId(null)
+  }
+
+  const startPan = (e: PointerEvent) => {
+    gesture.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }
+    setPanning(true)
+  }
+
+  const onViewportDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || isControl(e.target)) return
+    if (e.target instanceof Element && e.target.closest('[data-card], [data-cluster], [data-line]')) return
+    viewportRef.current?.setPointerCapture(e.pointerId)
+    startPan(e)
+  }
+
+  const onCardDown = (e: PointerEvent<HTMLDivElement>, item: ViewItem) => {
+    if (e.button !== 0 || isControl(e.target)) return
+    e.stopPropagation()
+    viewportRef.current?.setPointerCapture(e.pointerId)
+    if (tool === 'pan') return startPan(e)
+    if (connectMode) {
+      if (!item.id.startsWith('tmp-') && item.id !== DRAFT_MEMO_ID) props.onPickCard(item.id)
+      return
+    }
+    props.onSelect(item.id)
+    props.onSelectConnection(null)
+    const fixed = locked || item.id.startsWith('tmp-') || item.id === DRAFT_MEMO_ID || props.memoEdit?.id === item.id
+    if (fixed) return
+    gesture.current = { kind: 'card', id: item.id, sx: e.clientX, sy: e.clientY, ox: item.x, oy: item.y, moved: false }
+  }
+
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const g = gesture.current
+    if (!g) return
+    const dx = e.clientX - g.sx
+    const dy = e.clientY - g.sy
+    if (!g.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+    g.moved = true
+    if (g.kind === 'pan') return onViewChange({ ...view, x: g.ox + dx, y: g.oy + dy })
+    const x = Math.round(g.ox + dx / view.scale)
+    const y = Math.round(g.oy + dy / view.scale)
+    setDragPos({ id: g.id, x, y })
+    setConfirmId(null)
+    props.onDragMove(g.id, x, y)
+  }
+
+  const onPointerUp = () => {
+    const g = gesture.current
+    gesture.current = null
+    setPanning(false)
+    if (!g) return
+    if (g.kind === 'pan') {
+      if (!g.moved) {
+        props.onSelect(null)
+        props.onSelectConnection(null)
+      }
+      return
+    }
+    if (g.moved && dragPos?.id === g.id) props.onMoveEnd(g.id, dragPos.x, dragPos.y)
+    setDragPos(null)
+  }
+
+  const onCardKey = (e: KeyboardEvent<HTMLDivElement>, item: ViewItem) => {
+    if (e.target !== e.currentTarget || locked) return
+    const step = e.shiftKey ? 80 : 20
+    const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
+    if (moves[e.key] && !item.id.startsWith('tmp-')) {
+      e.preventDefault()
+      const [dx, dy] = moves[e.key]!
+      props.onMoveEnd(item.id, item.x + dx, item.y + dy)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      props.onSelect(item.id)
+      if (item.type === 'memo') props.onEditMemo(item.id)
+      else if (item.type === 'article') props.onDetail(item.id)
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      e.stopPropagation()
+      props.onSelect(item.id)
+      setConfirmId(item.id)
+    }
   }
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDropping(false)
     const article = parseArticle(e.dataTransfer.getData(ARTICLE_DRAG_TYPE))
-    const rect = containerRef.current?.getBoundingClientRect()
-    if (!article || !rect) return
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!article || !rect || locked) return
     const at = toBoard(view, e.clientX - rect.left, e.clientY - rect.top)
     props.onDropArticle(article, at.x, at.y)
   }
 
+  const positioned = items.map((item) => (dragPos?.id === item.id ? { ...item, x: dragPos.x, y: dragPos.y } : item))
+  const byId = new Map(positioned.map((i) => [i.id, i]))
+  const grid = Math.max(8, 24 * view.scale)
+  const cursor = panning ? 'grabbing' : tool === 'pan' ? 'grab' : 'default'
+
   return (
     <div
-      ref={containerRef}
-      className={`board-canvas${dropping ? ' board-canvas--drop' : ''}`}
+      ref={viewportRef}
+      className="canvas"
+      style={{
+        backgroundSize: `${grid}px ${grid}px`,
+        backgroundPosition: `${view.x}px ${view.y}px`,
+        cursor,
+      }}
+      onPointerDown={onViewportDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(ARTICLE_DRAG_TYPE)) return
+        if (!e.dataTransfer.types.includes(ARTICLE_DRAG_TYPE) || locked) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
-        setDropping(true)
+        if (!dropping) setDropping(true)
       }}
-      onDragLeave={() => setDropping(false)}
+      onDragLeave={(e) => {
+        if (viewportRef.current && e.relatedTarget instanceof Node && viewportRef.current.contains(e.relatedTarget)) return
+        setDropping(false)
+      }}
       onDrop={onDrop}
     >
-      {size.width > 0 && (
-        <Stage
-          ref={stageRef}
-          width={size.width}
-          height={size.height}
-          x={view.x}
-          y={view.y}
-          scaleX={view.scale}
-          scaleY={view.scale}
-          draggable
-          onWheel={onWheel}
-          onMouseDown={(e) => {
-            if (e.target === e.target.getStage()) {
-              props.onSelect(null)
-              props.onSelectConnection(null)
-            }
-          }}
-          onDragEnd={(e) => {
-            if (e.target === e.target.getStage()) onViewChange({ ...view, x: e.target.x(), y: e.target.y() })
-          }}
-        >
-          <Layer key={props.fontsVersion}>
-            <ClusterLinks clusters={props.clusters} items={items} />
-            <ConnectionLines
-              connections={props.connections}
-              items={items}
-              selectedId={props.selectedConnectionId}
-              onSelect={props.connectMode ? undefined : props.onSelectConnection}
-            />
-            {items.map((item) => (
-              <Card key={item.id} item={item} {...props} />
-            ))}
-            {props.clusters.map((cluster) => (
-              <ClusterCard
-                key={cluster.id}
-                cluster={cluster}
-                items={items}
-                onAction={(action) => props.onClusterAction(cluster.id, action)}
-              />
-            ))}
-          </Layer>
-        </Stage>
+      <div className="canvas__world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>
+        <Lines
+          clusters={props.clusters}
+          byId={byId}
+          heights={props.heights}
+          connections={props.connections}
+          selectedId={props.selectedConnectionId}
+          onSelect={connectMode || locked ? undefined : props.onSelectConnection}
+        />
+        {positioned.map((item) => (
+          <Card
+            key={item.id}
+            item={item}
+            props={props}
+            dragging={dragPos?.id === item.id}
+            confirming={confirmId === item.id}
+            onAskDelete={() => setConfirmId(item.id)}
+            onCancelDelete={() => setConfirmId(null)}
+            onDown={(e) => onCardDown(e, item)}
+            onKey={(e) => onCardKey(e, item)}
+          />
+        ))}
+        {props.clusters.map((cluster) => (
+          <ClusterCard key={cluster.id} cluster={cluster} items={positioned} props={props} />
+        ))}
+      </div>
+      {dropping && (
+        <div className="canvas__drop" aria-hidden="true">
+          <span>여기에 놓으면 보드에 추가돼요</span>
+        </div>
       )}
     </div>
   )
 }
 
+/** 화면에서 잰 높이를 알린다 (카드 내용이 바뀌면 다시) */
+function useMeasure(id: string, onHeight: (id: string, h: number) => void) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const report = () => onHeight(id, el.offsetHeight)
+    report()
+    const observer = new ResizeObserver(report)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [id, onHeight])
+  return ref
+}
+
 function Card({
   item,
-  members,
-  selectedId,
-  onSelect,
-  onMoveEnd,
-  onDragMove,
-  onEditMemo,
-  now,
-  connectMode,
-  connectFrom,
-  onPickCard,
-}: Props & { item: ViewItem }) {
-  const ref = useRef<Konva.Group>(null)
-  const { width, height } = cardSize(item)
+  props,
+  dragging,
+  confirming,
+  onAskDelete,
+  onCancelDelete,
+  onDown,
+  onKey,
+}: {
+  item: ViewItem
+  props: Props
+  dragging: boolean
+  confirming: boolean
+  onAskDelete: () => void
+  onCancelDelete: () => void
+  onDown: (e: PointerEvent<HTMLDivElement>) => void
+  onKey: (e: KeyboardEvent<HTMLDivElement>) => void
+}) {
+  const ref = useMeasure(item.id, props.onHeight)
   const temp = item.id.startsWith('tmp-')
-  const selected = connectMode ? connectFrom === item.id : selectedId === item.id
+  const draft = item.id === DRAFT_MEMO_ID
+  const editing = props.memoEdit?.id === item.id ? props.memoEdit : null
+  const selected = props.connectMode ? props.connectFrom === item.id : props.selectedId === item.id
+  const dimmed = props.highlight !== null && item.type === 'article' && !props.highlight.has(item.id)
+  const lit = props.highlight?.has(item.id) ?? false
+  const showMenu = selected && !props.connectMode && !props.locked && !editing && !temp && !draft && !confirming && !dragging
+  const member = item.movingBy ? props.members.get(item.movingBy)?.nickname : null
+  const width = cardWidth(item)
+  const kindLabel = item.type === 'article' ? '기사' : item.type === 'memo' ? '메모' : '사진'
+  const aria =
+    item.type === 'article'
+      ? `기사 카드: ${item.article?.title ?? '삭제된 기사'}`
+      : item.type === 'memo'
+        ? `메모 카드: ${item.content || '내용 없음'}`
+        : '사진 카드'
 
-  // 서버 결과·다른 사람의 이동이 오면 위치를 맞춘다 (내가 드래그 중일 때는 건드리지 않음)
-  useLayoutEffect(() => {
-    const node = ref.current
-    if (node && !node.isDragging() && (node.x() !== item.x || node.y() !== item.y)) node.position({ x: item.x, y: item.y })
-  })
+  const classes = [
+    'card',
+    `card--${item.type}`,
+    selected && 'card--selected',
+    dragging && 'card--dragging',
+    dimmed && 'card--dim',
+    lit && 'card--lit',
+    (item.pending || temp) && 'card--saving',
+    props.connectMode && 'card--connect',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
-    <Group
+    <div
       ref={ref}
-      x={item.x}
-      y={item.y}
-      offsetX={width / 2}
-      offsetY={height / 2}
-      rotation={displayRotation(item)}
-      opacity={item.pending ? 0.88 : 1}
-      draggable={!temp && !connectMode}
-      onMouseDown={(e) => {
-        e.cancelBubble = true
-        if (connectMode) {
-          if (!temp) onPickCard(item.id)
-        } else onSelect(item.id)
-      }}
-      onDragStart={(e) => {
-        e.target.moveToTop()
-        onSelect(item.id)
-      }}
-      onDragMove={(e) => onDragMove(item.id, e.target.x(), e.target.y())}
-      onDragEnd={(e) => {
-        e.cancelBubble = true
-        onMoveEnd(item.id, Math.round(e.target.x()), Math.round(e.target.y()))
-      }}
-      onDblClick={() => {
-        if (item.type === 'memo') onEditMemo(item.id)
-        else if (item.article?.originalLink) window.open(item.article.originalLink, '_blank', 'noopener,noreferrer')
-      }}
-      onMouseEnter={(e) => {
-        const container = e.target.getStage()?.container()
-        if (container) container.style.cursor = connectMode ? 'crosshair' : 'grab'
-      }}
-      onMouseLeave={(e) => {
-        const container = e.target.getStage()?.container()
-        if (container) container.style.cursor = 'default'
-      }}
+      data-card={item.id}
+      tabIndex={0}
+      role="group"
+      aria-label={aria}
+      className={classes}
+      style={{ left: item.x, top: item.y, width, zIndex: dragging ? 100000 : item.zIndex }}
+      onPointerDown={onDown}
+      onKeyDown={onKey}
     >
-      {selected && (
-        <Rect x={-4} y={-4} width={width + 8} height={height + 8} cornerRadius={8} stroke={COLORS.white} strokeWidth={1.5} dash={[5, 4]} />
+      {member && <span className="card__tag">{member}님이 옮기는 중</span>}
+      {showMenu && (
+        <div data-ui role="toolbar" aria-label="카드 메뉴" className="card__menu">
+          {item.type === 'article' && (
+            <button type="button" onClick={() => props.onDetail(item.id)}>
+              자세히
+            </button>
+          )}
+          {item.type === 'memo' && (
+            <button type="button" onClick={() => props.onEditMemo(item.id)}>
+              <Icon name="edit" size={16} />
+              수정
+            </button>
+          )}
+          <div className="card__menu-sep" aria-hidden="true" />
+          <button type="button" className="card__menu-danger" onClick={onAskDelete} aria-label={`${kindLabel} 카드 삭제`} title="카드 삭제">
+            <Icon name="trash" />
+          </button>
+        </div>
       )}
-      {item.type === 'memo' ? (
-        <MemoCard item={item} members={members} now={now} />
-      ) : item.type === 'photo' ? (
-        <Rect width={width} height={height} fill={COLORS.white} cornerRadius={2} shadowColor="black" shadowOpacity={0.34} shadowBlur={22} shadowOffsetY={10} />
-      ) : (
-        <ArticleCard item={item} height={height} now={now} />
+      {confirming && (
+        <div data-ui role="alertdialog" aria-label="카드 삭제 확인" className="card__confirm">
+          <b>이 카드를 삭제할까요?</b>
+          <span>팀원 모두의 보드에서 사라지고, 되돌릴 수 없어요.</span>
+          <div>
+            <button type="button" className="btn btn--ghost btn--xs" onClick={onCancelDelete}>
+              취소
+            </button>
+            <button
+              type="button"
+              className="btn btn--danger btn--xs"
+              autoFocus
+              onClick={() => {
+                onCancelDelete()
+                props.onDeleteCard(item.id)
+              }}
+            >
+              삭제
+            </button>
+          </div>
+        </div>
       )}
-    </Group>
+
+      {item.type === 'article' && (
+        <div className="card__article">
+          <div className="card__label">
+            <span>기사 · {categoryLabel(item)}</span>
+            {item.article?.submitted && <span className="card__ai">링크 요약</span>}
+          </div>
+          <span className="card__title">{item.article?.title ?? '삭제된 기사'}</span>
+          {item.article?.description && <span className="card__desc">{item.article.description}</span>}
+          <div className="card__foot">
+            <span className="card__src">
+              <b>{item.article?.source}</b> · {articleTime(item, props.now)}
+            </span>
+            {item.article?.originalLink && (
+              <a href={item.article.originalLink} target="_blank" rel="noopener noreferrer" aria-label="원문 보기 (새 탭)">
+                원문 <Icon name="ext" size={14} />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {item.type === 'memo' && (
+        <>
+          <div className="card__strip" aria-hidden="true" />
+          <div className="card__memo">
+            <span className="card__memo-by">메모 · {authorName(item, props.members)}</span>
+            {editing ? (
+              <>
+                <label htmlFor="memo-input" className="visually-hidden">
+                  메모 내용
+                </label>
+                <textarea
+                  id="memo-input"
+                  autoFocus
+                  rows={4}
+                  maxLength={2000}
+                  value={editing.text}
+                  placeholder="의견, 질문, 관찰을 적어 보세요"
+                  onChange={(e) => props.onMemoChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') props.onMemoCancel()
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) props.onMemoSave()
+                  }}
+                />
+                {editing.error === 'empty' && <span className="card__error">내용을 입력해 주세요.</span>}
+                {editing.error === 'fail' && (
+                  <span className="card__error" role="alert">
+                    변경을 저장하지 못했어요. 다시 시도해 주세요.
+                  </span>
+                )}
+                <div className="card__memo-actions">
+                  <button type="button" className="card__memo-cancel" onClick={props.onMemoCancel} disabled={editing.saving}>
+                    취소
+                  </button>
+                  <button type="button" className="btn btn--xs" onClick={props.onMemoSave} disabled={editing.saving}>
+                    {editing.saving ? '저장 중…' : '저장'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <span className="card__memo-text">{item.content || '내용 없음'}</span>
+            )}
+          </div>
+        </>
+      )}
+
+      {item.type === 'photo' && (
+        <div className="card__photo">
+          <div className="card__photo-img" role="img" aria-label="첨부 사진" />
+          <span className="card__memo-by">첨부 사진 · {authorName(item, props.members)}</span>
+        </div>
+      )}
+
+      {(item.pending || temp) && !editing && (
+        <div className="card__status">
+          <Spinner size={12} />
+          {temp ? '추가하는 중…' : '저장 중…'}
+        </div>
+      )}
+    </div>
   )
 }
 
-function ArticleCard({ item, height, now }: { item: ViewItem; height: number; now: Date }) {
-  const label = categoryLabel(item)
-  const chipH = chipHeight()
-  const labelWidth = measureTextWidth(label, CHIP_FONT.size)
-  const title = item.article?.title ?? '삭제된 기사'
-  const titleWidth = ARTICLE.width - ARTICLE.padX * 2
-  const titleH = measureTextHeight(title, titleWidth, { size: TITLE_FONT.size, lineHeight: TITLE_FONT.lineHeight, style: TITLE_FONT.style })
-  const titleY = ARTICLE.padTop + chipH + ARTICLE.chipGap
+/** AI 이슈 클러스터 카드 (F-08, A4): 이슈 이름·요약·묶인 기사 수, 자동 정렬/원래대로, 제안 무시 */
+function ClusterCard({ cluster, items, props }: { cluster: BoardCluster; items: ViewItem[]; props: Props }) {
+  const ref = useMeasure(`cluster-${cluster.id}`, props.onHeight)
+  const members = items.filter((i) => cluster.itemIds.includes(i.id))
+  const arranged = members.some((i) => i.arranged)
   return (
-    <>
-      <Rect
-        width={ARTICLE.width}
-        height={height}
-        fill={COLORS.white}
-        stroke="rgba(33,33,33,0.1)"
-        strokeWidth={1}
-        cornerRadius={5}
-        shadowColor="black"
-        shadowOpacity={0.28}
-        shadowBlur={20}
-        shadowOffsetY={8}
-      />
-      <Rect
-        x={ARTICLE.padX}
-        y={ARTICLE.padTop}
-        width={labelWidth + CHIP_FONT.padX * 2}
-        height={chipH}
-        stroke={COLORS.grayLight}
-        strokeWidth={1}
-        cornerRadius={3}
-      />
-      <Text
-        x={ARTICLE.padX + CHIP_FONT.padX}
-        y={ARTICLE.padTop + CHIP_FONT.padY + 1}
-        text={label}
-        fontSize={CHIP_FONT.size}
-        fontFamily={FONT_SANS}
-        fontStyle="600"
-        letterSpacing={0.4}
-        fill={COLORS.grayDark}
-      />
-      <Text
-        x={ARTICLE.padX}
-        y={titleY}
-        width={titleWidth}
-        text={title}
-        fontSize={TITLE_FONT.size}
-        fontFamily={FONT_SANS}
-        fontStyle={TITLE_FONT.style}
-        lineHeight={TITLE_FONT.lineHeight}
-        letterSpacing={-0.2}
-        wrap="char"
-        fill={COLORS.black}
-      />
-      <Text
-        x={ARTICLE.padX}
-        y={titleY + titleH + ARTICLE.metaGap}
-        width={titleWidth}
-        text={articleMeta(item, now)}
-        fontSize={META_FONT.size}
-        fontFamily={FONT_SANS}
-        fill={COLORS.grayMid}
-        ellipsis
-        wrap="none"
-      />
-    </>
-  )
-}
-
-function MemoCard({ item, members, now }: { item: ViewItem; members: Map<string, BoardMember>; now: Date }) {
-  const empty = !item.content
-  const textWidth = MEMO.width - MEMO.padX * 2
-  const metaY = MEMO.height - MEMO.padY - META_FONT.size * 1.2
-  return (
-    <>
-      <Rect
-        width={MEMO.width}
-        height={MEMO.height}
-        fill={COLORS.grayLight}
-        cornerRadius={3}
-        shadowColor="black"
-        shadowOpacity={0.3}
-        shadowBlur={18}
-        shadowOffsetY={8}
-      />
-      <Text
-        x={MEMO.padX}
-        y={MEMO.padY}
-        width={textWidth}
-        height={metaY - MEMO.padY - 4}
-        text={empty ? '더블클릭해서 메모 입력' : (item.content ?? '')}
-        fontSize={empty ? 14 : MEMO_FONT.size}
-        fontFamily={FONT_HAND}
-        lineHeight={MEMO_FONT.lineHeight}
-        fill={empty ? COLORS.grayMid : COLORS.black}
-        wrap="char"
-        ellipsis
-      />
-      <Text
-        x={MEMO.padX}
-        y={metaY}
-        width={textWidth}
-        text={memoMeta(item, members, now)}
-        fontSize={META_FONT.size}
-        fontFamily={FONT_SANS}
-        fill={COLORS.grayDark}
-        wrap="none"
-        ellipsis
-      />
-    </>
-  )
-}
-
-/** 클러스터 카드에서 묶인 카드들로 이어지는 가는 선 (목업의 클러스터 연결선 — 사용자가 긋는 연결선 F-10과는 별개) */
-function ClusterLinks({ clusters, items }: { clusters: BoardCluster[]; items: ViewItem[] }) {
-  const byId = new Map(items.map((i) => [i.id, i]))
-  return (
-    <>
-      {clusters.flatMap((cluster) => {
-        const { height } = clusterLayout(cluster.title, cluster.summary)
-        const cy = cluster.y + height / 2
-        return cluster.itemIds
-          .map((id) => byId.get(id))
-          .filter((item): item is ViewItem => Boolean(item))
-          .map((item) => (
-            <Line
-              key={`${cluster.id}-${item.id}`}
-              points={[cluster.x, cy, item.x, item.y]}
-              stroke="rgba(255,255,255,0.4)"
-              strokeWidth={1}
-              listening={false}
-            />
-          ))
-      })}
-    </>
+    <div
+      ref={ref}
+      data-cluster={cluster.id}
+      className="cluster-card"
+      style={{ left: cluster.x - CLUSTER_WIDTH / 2, top: cluster.y, width: CLUSTER_WIDTH }}
+    >
+      <div className="cluster-card__label">
+        <span className="badge">AI 이슈</span>
+        <span>기사 {members.length}개</span>
+      </div>
+      <b className="cluster-card__title">{cluster.title}</b>
+      {cluster.summary && <p className="cluster-card__summary">{cluster.summary}</p>}
+      <div className="cluster-card__actions" data-ui>
+        <button
+          type="button"
+          className={`btn btn--xs${arranged ? ' btn--ghost' : ''}`}
+          disabled={props.locked}
+          onClick={() => props.onClusterAction(cluster.id, arranged ? 'restore' : 'arrange')}
+        >
+          {arranged ? '원래대로' : '자동 정렬'}
+        </button>
+        <button type="button" className="btn btn--ghost btn--xs" disabled={props.locked} onClick={() => props.onClusterAction(cluster.id, 'dismiss')}>
+          제안 무시
+        </button>
+      </div>
+    </div>
   )
 }
 
 /**
- * 사용자가 그은 카드 간 연결선 (F-10). 카드 가운데끼리 잇는 실선, 카드 아래에 그린다.
- * 선이 가늘어 누르기 어려우므로 누를 수 있는 폭을 넓게 둔다
+ * 선 (월드 좌표 SVG): 클러스터 카드에서 묶인 카드로 가는 옅은 점선(F-08)과 사용자가 그은 연결선(F-10).
+ * 연결선은 가늘어 누르기 어려우므로 투명한 넓은 선을 함께 깔아 누를 수 있게 한다
  */
-function ConnectionLines({
+function Lines({
+  clusters,
+  byId,
+  heights,
   connections,
-  items,
   selectedId,
   onSelect,
 }: {
+  clusters: BoardCluster[]
+  byId: Map<string, ViewItem>
+  heights: Map<string, number>
   connections: BoardConnection[]
-  items: ViewItem[]
   selectedId: string | null
   onSelect?: (id: string) => void
 }) {
-  const byId = new Map(items.map((i) => [i.id, i]))
   return (
-    <>
+    <svg className="canvas__lines" aria-hidden="true">
+      {clusters.flatMap((cluster) => {
+        const cy = cluster.y + (heights.get(`cluster-${cluster.id}`) ?? 120) / 2
+        return cluster.itemIds
+          .map((id) => byId.get(id))
+          .filter((item): item is ViewItem => Boolean(item))
+          .map((item) => (
+            <line key={`${cluster.id}-${item.id}`} className="canvas__cluster-link" x1={cluster.x} y1={cy} x2={item.x} y2={item.y} />
+          ))
+      })}
       {connections.map((c) => {
         const from = byId.get(c.fromId)
         const to = byId.get(c.toId)
         if (!from || !to) return null
         const selected = selectedId === c.id
         return (
-          <Line
-            key={c.id}
-            points={[from.x, from.y, to.x, to.y]}
-            stroke={selected ? COLORS.white : 'rgba(255,255,255,0.75)'}
-            strokeWidth={selected ? 3 : 2}
-            dash={selected ? [8, 5] : undefined}
-            hitStrokeWidth={14}
-            listening={Boolean(onSelect)}
-            onMouseDown={(e) => {
-              e.cancelBubble = true
-              onSelect?.(c.id)
-            }}
-            onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container()
-              if (container && onSelect) container.style.cursor = 'pointer'
-            }}
-            onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container()
-              if (container) container.style.cursor = 'default'
-            }}
-          />
+          <g key={c.id} data-line={c.id}>
+            <line
+              className={`canvas__link${selected ? ' canvas__link--selected' : ''}`}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+            />
+            {onSelect && (
+              <line
+                className="canvas__link-hit"
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  onSelect(c.id)
+                }}
+              />
+            )}
+          </g>
         )
       })}
-    </>
+    </svg>
   )
 }
 
-/** 클러스터 카드 안의 버튼 (Konva에는 버튼이 없어 사각형+글자로 만든다) */
-function CanvasButton({
-  x,
-  y,
-  label,
-  primary,
-  onClick,
-}: {
-  x: number
-  y: number
-  label: string
-  primary?: boolean
-  onClick: () => void
-}) {
-  const width = measureTextWidth(label, 10.5) + 18
-  return (
-    <Group
-      x={x}
-      y={y}
-      onClick={(e) => {
-        e.cancelBubble = true
-        onClick()
-      }}
-      onTap={(e) => {
-        e.cancelBubble = true
-        onClick()
-      }}
-      onMouseDown={(e) => {
-        e.cancelBubble = true
-      }}
-      onMouseEnter={(e) => {
-        const container = e.target.getStage()?.container()
-        if (container) container.style.cursor = 'pointer'
-      }}
-      onMouseLeave={(e) => {
-        const container = e.target.getStage()?.container()
-        if (container) container.style.cursor = 'default'
-      }}
-    >
-      <Rect
-        width={width}
-        height={CLUSTER.buttonH}
-        cornerRadius={4}
-        fill={primary ? COLORS.white : 'transparent'}
-        stroke={primary ? undefined : 'rgba(255,255,255,0.3)'}
-        strokeWidth={1}
-      />
-      <Text
-        x={9}
-        y={(CLUSTER.buttonH - 10.5 * 1.2) / 2 + 1}
-        text={label}
-        fontSize={10.5}
-        fontFamily={FONT_SANS}
-        fontStyle={primary ? '600' : 'normal'}
-        fill={primary ? COLORS.black : 'rgba(255,255,255,0.7)'}
-      />
-    </Group>
-  )
-}
-
-/** AI 클러스터 카드 (F-08): 이슈 이름·요약·묶인 수, 자동 정렬/원래대로, 제안 무시 */
-function ClusterCard({
-  cluster,
-  items,
-  onAction,
-}: {
-  cluster: BoardCluster
-  items: ViewItem[]
-  onAction: (action: ClusterAction) => void
-}) {
-  const layout = clusterLayout(cluster.title, cluster.summary)
-  const members = items.filter((i) => cluster.itemIds.includes(i.id))
-  const arranged = members.some((i) => i.arranged)
-  const label = 'AI 클러스터'
-  const labelWidth = measureTextWidth(label, CHIP_FONT.size) + 2
-  const primary = arranged ? '원래대로' : '자동 정렬'
-  return (
-    <Group x={cluster.x - CLUSTER.width / 2} y={cluster.y}>
-      <Rect
-        width={CLUSTER.width}
-        height={layout.height}
-        fill={COLORS.black}
-        stroke="rgba(255,255,255,0.14)"
-        strokeWidth={1}
-        cornerRadius={7}
-        shadowColor="black"
-        shadowOpacity={0.4}
-        shadowBlur={28}
-        shadowOffsetY={12}
-      />
-      <Rect
-        x={CLUSTER.padX}
-        y={CLUSTER.padTop}
-        width={labelWidth + CHIP_FONT.padX * 2 + 2}
-        height={chipHeight() + 1}
-        stroke="rgba(255,255,255,0.35)"
-        strokeWidth={1}
-        cornerRadius={3}
-      />
-      <Text
-        x={CLUSTER.padX + CHIP_FONT.padX + 1}
-        y={CLUSTER.padTop + CHIP_FONT.padY + 1.5}
-        text={label}
-        fontSize={CHIP_FONT.size}
-        fontFamily={FONT_SANS}
-        fontStyle="600"
-        letterSpacing={0.6}
-        fill="rgba(255,255,255,0.85)"
-      />
-      <Text
-        x={CLUSTER.padX + labelWidth + CHIP_FONT.padX * 2 + 9}
-        y={CLUSTER.padTop + CHIP_FONT.padY + 1.5}
-        text={`기사 ${members.length}`}
-        fontSize={9.5}
-        fontFamily={FONT_SANS}
-        fill="rgba(255,255,255,0.55)"
-      />
-      <Text
-        x={CLUSTER.padX}
-        y={layout.titleY}
-        width={layout.width}
-        text={cluster.title}
-        fontSize={CLUSTER_TITLE_FONT.size}
-        fontFamily={CLUSTER_TITLE_FONT.family}
-        fontStyle={CLUSTER_TITLE_FONT.style}
-        lineHeight={CLUSTER_TITLE_FONT.lineHeight}
-        wrap="char"
-        fill={COLORS.white}
-      />
-      {cluster.summary && (
-        <Text
-          x={CLUSTER.padX}
-          y={layout.summaryY}
-          width={layout.width}
-          text={cluster.summary}
-          fontSize={CLUSTER_TEXT_FONT.size}
-          fontFamily={FONT_SANS}
-          lineHeight={CLUSTER_TEXT_FONT.lineHeight}
-          wrap="char"
-          fill="rgba(255,255,255,0.72)"
-        />
-      )}
-      <CanvasButton x={CLUSTER.padX} y={layout.buttonY} label={primary} primary onClick={() => onAction(arranged ? 'restore' : 'arrange')} />
-      <CanvasButton
-        x={CLUSTER.padX + measureTextWidth(primary, 10.5) + 18 + 6}
-        y={layout.buttonY}
-        label="제안 무시"
-        onClick={() => onAction('dismiss')}
-      />
-    </Group>
-  )
-}
-
-let measureCanvas: CanvasRenderingContext2D | null = null
-function measureTextWidth(text: string, size: number): number {
-  measureCanvas ??= document.createElement('canvas').getContext('2d')
-  if (!measureCanvas) return text.length * size
-  measureCanvas.font = `600 ${size}px ${FONT_SANS}`
-  return measureCanvas.measureText(text).width + text.length * 0.4
-}

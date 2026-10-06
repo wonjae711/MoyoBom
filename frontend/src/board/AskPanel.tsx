@@ -4,8 +4,6 @@ import { askBoard, askQuota, type AskResult } from './api'
 
 interface Props {
   boardId: string
-  open: boolean
-  onClose: () => void
   /** 출처 카드를 보드에서 선택하고 화면 가운데로 옮긴다. 이미 지워진 카드면 false */
   onShowCard: (itemId: string) => boolean
   /** 보드에 기사 카드가 있는지 (없으면 물을 수 없다) */
@@ -13,10 +11,10 @@ interface Props {
 }
 
 /**
- * 보드 질의응답 (F-12): 보드에 모은 기사만 근거로 답하고 출처를 번호로 보여 준다.
- * 답변은 묻는 사람에게만 보이고 저장하지 않는다 (창을 닫아도 마지막 답변은 남겨 둔다)
+ * 보드 질의응답 (F-12, A2): 오른쪽 패널 "질문하기". 보드에 모은 기사만 근거로 답하고 출처를 번호로 보여 준다.
+ * 답변은 묻는 사람에게만 보이고 저장하지 않는다
  */
-export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Props) {
+export function AskPanel({ boardId, onShowCard, hasArticles }: Props) {
   const [question, setQuestion] = useState('')
   const [asked, setAsked] = useState('')
   const [result, setResult] = useState<AskResult | null>(null)
@@ -26,11 +24,10 @@ export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Pr
   const [missing, setMissing] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
     askQuota(boardId)
       .then(setRemaining)
       .catch(() => setRemaining(null))
-  }, [boardId, open])
+  }, [boardId])
 
   const submit = async () => {
     const q = question.trim()
@@ -44,25 +41,20 @@ export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Pr
       setAsked(q)
       setRemaining(answer.remaining)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : '답변을 받지 못했습니다. 잠시 후 다시 시도해 주세요')
-      askQuota(boardId).then(setRemaining).catch(() => {})
+      setError(e instanceof ApiError ? e.message : '답변을 받지 못했어요. 잠시 후 다시 시도해 주세요.')
+      askQuota(boardId)
+        .then(setRemaining)
+        .catch(() => {})
     } finally {
       setLoading(false)
     }
   }
 
-  if (!open) return null
   const cited = new Set(result?.citations)
 
   return (
-    <section className="ask" aria-label="보드에 질문하기">
-      <div className="ask__head">
-        <span className="ask__title">보드에 질문하기</span>
-        <button type="button" className="ask__close" onClick={onClose} aria-label="질문 창 닫기">
-          ×
-        </button>
-      </div>
-      <p className="ask__desc">이 보드에 모은 기사만 근거로 답합니다. 답변은 나에게만 보입니다.</p>
+    <div className="side__body ask">
+      <p className="ask__desc">이 보드에 모은 기사만 근거로 답해요. 답변은 나에게만 보여요.</p>
       <form
         className="ask__form"
         onSubmit={(e) => {
@@ -70,10 +62,15 @@ export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Pr
           void submit()
         }}
       >
+        <label htmlFor="ask-question" className="visually-hidden">
+          질문
+        </label>
         <textarea
+          id="ask-question"
+          className="input ask__input"
           value={question}
           maxLength={300}
-          rows={2}
+          rows={3}
           placeholder={hasArticles ? '예: 이번 반도체 규제의 핵심 쟁점은?' : '기사 카드를 먼저 보드에 올려 주세요'}
           disabled={!hasArticles}
           onChange={(e) => setQuestion(e.target.value)}
@@ -83,17 +80,20 @@ export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Pr
               void submit()
             }
           }}
-          aria-label="질문"
         />
         <div className="ask__row">
           <span className="ask__quota">{remaining !== null && `오늘 남은 질문 ${remaining}회`}</span>
-          <button type="submit" className="btn" disabled={!hasArticles || loading || question.trim().length < 2}>
+          <button type="submit" className="btn btn--sm" disabled={!hasArticles || loading || question.trim().length < 2}>
             {loading ? '답변 찾는 중…' : '묻기'}
           </button>
         </div>
       </form>
 
-      {error && <p className="ask__error">{error}</p>}
+      {error && (
+        <div className="notice notice--err" role="alert">
+          {error}
+        </div>
+      )}
 
       {result && (
         <div className="ask__result">
@@ -117,6 +117,7 @@ export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Pr
                       <div className="ask__source-actions">
                         <button
                           type="button"
+                          className="text-btn"
                           onClick={() => setMissing(onShowCard(s.itemId) ? null : s.itemId)}
                           disabled={missing === s.itemId}
                         >
@@ -134,6 +135,6 @@ export function AskPanel({ boardId, open, onClose, onShowCard, hasArticles }: Pr
           )}
         </div>
       )}
-    </section>
+    </div>
   )
 }

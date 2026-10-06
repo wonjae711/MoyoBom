@@ -37,6 +37,8 @@ interface ItemRow {
   a_category: string | null;
   a_original_link: string | null;
   a_published_at: Date | null;
+  a_created_at: Date | null;
+  a_source_type: string | null;
 }
 
 const ITEM_COLUMNS = `
@@ -44,7 +46,8 @@ const ITEM_COLUMNS = `
   bi.rotation, bi.z_index, bi.created_by, bi.updated_at, bi.version::text AS version,
   (bi.arranged_version IS NOT NULL) AS arranged,
   a.title AS a_title, a.description AS a_description, a.source AS a_source, a.category AS a_category,
-  a.original_link AS a_original_link, a.published_at AS a_published_at`;
+  a.original_link AS a_original_link, a.published_at AS a_published_at,
+  a.created_at AS a_created_at, a.source_type AS a_source_type`;
 
 function toItem(row: ItemRow): BoardItem {
   return {
@@ -60,6 +63,8 @@ function toItem(row: ItemRow): BoardItem {
             category: row.a_category as CategoryCode | null,
             originalLink: row.a_original_link ?? '',
             publishedAt: row.a_published_at?.toISOString() ?? null,
+            collectedAt: (row.a_created_at ?? row.updated_at).toISOString(),
+            submitted: row.a_source_type === 'user_submitted',
           }
         : null,
     content: row.content,

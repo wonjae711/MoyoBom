@@ -28,6 +28,10 @@ export interface ItemArticle {
   category: CategoryCode | null
   originalLink: string
   publishedAt: string | null
+  /** 저장(수집)된 시각 */
+  collectedAt: string
+  /** 사용자가 링크로 추가한 기사 ("링크 요약" 표시) */
+  submitted: boolean
 }
 
 export interface BoardItem {

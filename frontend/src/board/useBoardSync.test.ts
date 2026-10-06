@@ -155,7 +155,7 @@ describe('[F-05] 보드 실시간 동기화 훅', () => {
 
   it('카드 이동이 실패하면 원래 위치로 되돌리고 알린다', async () => {
     const { result, onError } = await joined([item('1', 8, 80)])
-    let moved: Promise<void> = Promise.resolve()
+    let moved: Promise<boolean> = Promise.resolve(true)
     act(() => {
       moved = result.current.moveCard('1', 300, 300)
     })
@@ -171,7 +171,7 @@ describe('[F-05] 보드 실시간 동기화 훅', () => {
 
   it('다른 사람이 이미 지운 카드를 옮기면(not_found) 화면에서도 지운다', async () => {
     const { result, onError } = await joined([item('1', 8, 80)])
-    let moved: Promise<void> = Promise.resolve()
+    let moved: Promise<boolean> = Promise.resolve(true)
     act(() => {
       moved = result.current.moveCard('1', 5, 5)
     })
@@ -224,18 +224,17 @@ describe('[F-05] 보드 실시간 동기화 훅', () => {
     ])
   })
 
-  it('[F-03] 링크 요약 카드는 REST 응답으로 바로 보이고, 같은 카드의 브로드캐스트가 와도 한 번만 보인다', async () => {
+  it('[F-03·B12] 미리보기 확인 후 추가한 링크 카드는 REST 응답으로 바로 보이고, 같은 카드의 브로드캐스트가 와도 한 번만 보인다', async () => {
     const created = { ...item('40', 11), type: 'article' as const, content: null }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => Response.json({ item: created, reused: false, summarized: true, remaining: 19 }, { status: 201 })),
-    )
+    const fetchMock = vi.fn(async () => Response.json({ item: created }, { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
     const { result } = await joined()
     let res: Awaited<ReturnType<typeof result.current.addLink>> | undefined
     await act(async () => {
       res = await result.current.addLink('https://news.example/a', 0, 0)
     })
-    expect(res?.remaining).toBe(19)
+    expect(res?.id).toBe('40')
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain('/links/confirm')
     act(() => fake.socket.fire('card:added', { boardId: '7', item: created }))
     expect(result.current.items.map((i) => i.id)).toEqual(['40'])
     vi.unstubAllGlobals()

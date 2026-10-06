@@ -7,7 +7,7 @@ function article(id: string, source: string, articleId = id): BoardItem {
     id,
     type: 'article',
     articleId,
-    article: { title: id, description: '', source, category: 'economy', originalLink: '', publishedAt: null },
+    article: { title: id, description: '', source, category: 'economy', originalLink: '', publishedAt: null, collectedAt: '', submitted: false },
     content: null,
     imageKey: null,
     x: 0,
