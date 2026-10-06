@@ -77,10 +77,15 @@ describe('GET /api/articles', () => {
     expect(listFeed).toHaveBeenCalledWith({
       limit: 30,
       q: '반도체 규제',
-      source: '한겨레',
+      sources: ['한겨레'],
       from: new Date('2026-09-30T15:00:00.000Z'),
       to: new Date('2026-10-03T15:00:00.000Z'),
     });
+    // 언론사 여러 곳 (B4)
+    await request(app)
+      .get(`/api/articles?source=${encodeURIComponent('한겨레')}&source=${encodeURIComponent('조선일보')}`)
+      .set('Cookie', await authCookie());
+    expect(listFeed).toHaveBeenLastCalledWith({ limit: 30, sources: ['한겨레', '조선일보'] });
   });
 
   it('[F-04] 기간의 시작이 끝보다 늦거나 날짜 형식이 틀리면 400', async () => {

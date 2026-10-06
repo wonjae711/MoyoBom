@@ -72,8 +72,8 @@ export interface FeedQuery {
   category?: CategoryCode;
   /** 검색어 (F-04). 띄어쓰기로 나눈 낱말이 모두 제목이나 요약에 들어 있는 기사만 */
   q?: string;
-  /** 언론사 이름 정확히 일치 (F-04) */
-  source?: string;
+  /** 언론사 이름 정확히 일치, 여러 곳이면 그중 하나 (F-04, B4 여러 언론사 선택) */
+  sources?: string[];
   /** 발행 시각 범위 [from, to) (F-04) */
   from?: Date;
   to?: Date;
@@ -103,7 +103,7 @@ function filterConditions(query: FeedQuery, params: unknown[]): string[] {
     return `$${params.length}`;
   };
   if (query.category) where.push(`category = ${add(query.category)}`);
-  if (query.source) where.push(`source = ${add(query.source)}`);
+  if (query.sources?.length) where.push(`source = ANY(${add(query.sources)}::text[])`);
   if (query.from) where.push(`published_at >= ${add(query.from)}`);
   if (query.to) where.push(`published_at < ${add(query.to)}`);
   for (const term of searchTerms(query.q)) {

@@ -181,4 +181,44 @@ describe.skipIf(!testDatabaseUrl)('[F-03] 링크로 기사 카드 추가 (DB)', 
     const res = await request(app).post(`/api/boards/${boardId}/links`).set('Cookie', owner.cookie).send(body);
     expect(res.status).toBe(400);
   });
+  describe('[B12] 요약 미리보기 → 보드에 추가', () => {
+    const preview = (url: string, cookie = owner.cookie) =>
+      request(app).post(`/api/boards/${boardId}/links/preview`).set('Cookie', cookie).send({ url });
+    const confirm = (url: string, cookie = owner.cookie) =>
+      request(app).post(`/api/boards/${boardId}/links/confirm`).set('Cookie', cookie).send({ url, x: 5, y: 6 });
+
+    it('미리보기는 요약까지만 하고 카드를 만들지 않는다. "보드에 추가"를 눌러야 카드가 생긴다', async () => {
+      const res = await preview('https://www.hani.co.kr/arti/1.html');
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ reused: false, summarized: true, onBoard: false, remaining: 19 });
+      expect(res.body.article).toMatchObject({ title: '美, AI 칩 수출 통제 3차 확대', description: '통제 대상이 장비·정비 인력으로 넓어졌다.' });
+      expect((await boards.getSnapshot(boardId, owner.id)).items).toEqual([]);
+
+      const added = await confirm('https://www.hani.co.kr/arti/1.html?utm_source=x');
+      expect(added.status).toBe(201);
+      expect(added.body.item).toMatchObject({ x: 5, y: 6, article: { title: '美, AI 칩 수출 통제 3차 확대' } });
+      expect(calls.some(([name]) => name === 'cardAdded')).toBe(true);
+
+      // 같은 주소를 다시 미리보기하면 이미 이 보드에 있다고 알린다 (AI 다시 안 부름);
+      const again = await preview('https://www.hani.co.kr/arti/1.html');
+      expect(again.body).toMatchObject({ reused: true, onBoard: true });
+      expect(summarize).toHaveBeenCalledTimes(1);
+    });
+
+    it('[보안] 미리보기하지 않은 주소는 추가할 수 없고, 멤버가 아니면 미리보기도 못 한다', async () => {
+      expect((await confirm('https://www.hani.co.kr/arti/9.html')).status).toBe(404);
+      expect((await preview('https://www.hani.co.kr/arti/1.html', outsider.cookie)).status).toBe(404);
+      expect(fetchPage).not.toHaveBeenCalled();
+    });
+  });
+
+  it('[B7] 뉴스 화면에서 고른 기사를 보드 맨 아래 왼쪽에 추가한다', async () => {
+    await boards.addItem(boardId, owner.id, { type: 'memo', content: '메모', x: -40, y: 300 });
+    const articleId = await createArticle(pool, '수집된 기사');
+    const res = await request(app).post(`/api/boards/${boardId}/articles`).set('Cookie', owner.cookie).send({ articleId });
+    expect(res.status).toBe(201);
+    expect(res.body.item).toMatchObject({ x: -40, y: 560 });
+    expect(calls.some(([name]) => name === 'cardAdded')).toBe(true);
+    expect((await request(app).post(`/api/boards/${boardId}/articles`).set('Cookie', outsider.cookie).send({ articleId })).status).toBe(404);
+  });
 });

@@ -45,6 +45,16 @@ export interface LinkResult {
   remaining: number;
 }
 
+/** 링크 요약 미리보기 (B12): 보드에 올리기 전에 보여 줄 기사 */
+export interface LinkPreview {
+  article: { id: string; title: string; description: string; source: string; publishedAt: string | null };
+  reused: boolean;
+  summarized: boolean;
+  /** 이미 이 보드에 올라가 있는 기사 (같은 주소 안내 후 중단) */
+  onBoard: boolean;
+  remaining: number;
+}
+
 export interface LinkServiceDeps {
   pool: pg.Pool;
   boards: BoardService;
@@ -92,6 +102,62 @@ export class LinkService {
     const articleId = await this.saveArticle(link, extracted, description, input.userId);
     const item = await this.addCard(input, articleId);
     return { item, reused: false, summarized, remaining: remaining ?? (await this.remaining(input.userId)) };
+  }
+
+  /**
+   * 미리보기 (B12, 프로토타입 "요약 미리보기 → 보드에 추가"): 가져오기·요약·기사 저장까지 하고 카드는 만들지 않는다.
+   * 요약 한도는 여기서 쓴다. 저장한 기사는 보드에 올리지 않으면 30일 뒤 정리된다 (C-06)
+   */
+  async previewLink(input: { boardId: string; userId: string; ip: string; url: string }): Promise<LinkPreview> {
+    const { boards } = this.deps;
+    if (!(await boards.getRole(input.boardId, input.userId))) throw new BoardError('not_found', '보드를 찾을 수 없습니다');
+    const url = normalizeUrl(input.url);
+    if (!url) throw new LinkError('invalid_url', '올바른 http/https 주소를 입력해 주세요');
+    const link = url.toString();
+
+    let articleId = await this.findArticle(link);
+    let reused = true;
+    let summarized = false;
+    let remaining: number | undefined;
+    if (!articleId) {
+      const page = await this.fetchWithMobileFallback(input.url, url);
+      const extracted = await extractPage(page.html, url);
+      const described = await this.describe(extracted, input);
+      if (!extracted.title && !described.description) throw new UnreadableError();
+      articleId = await this.saveArticle(link, extracted, described.description, input.userId);
+      reused = false;
+      summarized = described.summarized;
+      remaining = described.remaining;
+    }
+    const { rows } = await this.deps.pool.query<{
+      title: string;
+      description: string;
+      source: string;
+      published_at: Date | null;
+      on_board: boolean;
+    }>(
+      `SELECT a.title, a.description, a.source, a.published_at,
+         EXISTS (SELECT 1 FROM board_items bi WHERE bi.board_id = $2 AND bi.article_id = a.id) AS on_board
+       FROM articles a WHERE a.id = $1`,
+      [articleId, input.boardId],
+    );
+    const a = rows[0]!;
+    return {
+      article: { id: articleId, title: a.title, description: a.description, source: a.source, publishedAt: a.published_at?.toISOString() ?? null },
+      reused,
+      summarized,
+      onBoard: a.on_board,
+      remaining: remaining ?? (await this.remaining(input.userId)),
+    };
+  }
+
+  /** 미리보기한 주소의 기사를 카드로 올린다 (같은 주소를 다시 보내므로 다른 보드의 기사 id로는 올릴 수 없다 — C-06) */
+  async confirmLink(input: { boardId: string; userId: string; url: string; x: number; y: number }): Promise<BoardItem> {
+    const url = normalizeUrl(input.url);
+    if (!url) throw new LinkError('invalid_url', '올바른 http/https 주소를 입력해 주세요');
+    const articleId = await this.findArticle(url.toString());
+    if (!articleId) throw new BoardError('not_found', '미리보기가 만료됐어요. 주소를 다시 입력해 주세요');
+    return this.addCard(input, articleId);
   }
 
   private async findArticle(link: string): Promise<string | null> {

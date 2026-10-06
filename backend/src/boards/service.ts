@@ -355,6 +355,17 @@ export class BoardService {
    * 사용자가 링크로 추가한 기사(user_submitted)는 그 기사가 이미 이 보드에 있을 때만 id로 다시 올릴 수 있다 —
    * 다른 보드의 제출 기사를 id 추측으로 가져오지 못하게 한다 (C-06). 링크 추가(F-03)는 allowSubmitted로 통과한다
    */
+  /** 뉴스 화면에서 고른 기사를 보드의 맨 아래 왼쪽(기존 카드 아래 260)에 놓는다 (B7) */
+  async addArticleBelow(boardId: string, userId: string, articleId: string): Promise<BoardItem> {
+    const { rows } = await this.pool.query<{ x: number | null; y: number | null }>(
+      'SELECT min(position_x) AS x, max(position_y) AS y FROM board_items WHERE board_id = $1',
+      [boardId],
+    );
+    const x = rows[0]?.x ?? 0;
+    const y = rows[0]?.y === null || rows[0]?.y === undefined ? 0 : rows[0].y + 260;
+    return this.addItem(boardId, userId, { type: 'article', articleId, x, y });
+  }
+
   async addItem(
     boardId: string,
     userId: string,

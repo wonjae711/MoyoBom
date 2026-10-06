@@ -177,11 +177,13 @@ describe.skipIf(!testDatabaseUrl)('listFeed (DB)', () => {
     const page = await listFeed(pool, {
       limit: 10,
       category: 'economy',
-      source: '한겨레',
+      sources: ['한겨레'],
       from: new Date('2026-10-01T00:00:00+09:00'),
       to: new Date('2026-10-04T00:00:00+09:00'),
     })
     expect(titles(page)).toEqual(['A']);
+    // 언론사 여러 곳 (B4)
+    expect(titles(await listFeed(pool, { limit: 10, category: 'economy', sources: ['한겨레', '조선일보'] }))).toEqual(['A', 'B', 'D']);
   })
 
   it('[F-04] 걸러 낸 결과에서도 더 보기 커서와 재연결 보완(수집 순)이 같은 조건으로 동작한다', async () => {

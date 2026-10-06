@@ -12,7 +12,12 @@ const querySchema = z.object({
   category: z.enum(categoryCodes).optional(),
   // F-04 검색·필터
   q: z.string().trim().max(100).optional(),
-  source: z.string().trim().min(1).max(100).optional(),
+  // 언론사는 여러 곳을 고를 수 있다: ?source=한겨레&source=조선일보 (최대 10곳)
+  source: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v : [v]).map((s) => s.trim()).filter(Boolean))
+    .pipe(z.array(z.string().max(100)).max(10))
+    .optional(),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
 });
@@ -66,7 +71,7 @@ export function createArticlesRouter(deps: ArticlesRouteDeps): Router {
       collectedAfter: after ?? undefined,
       category: category as FeedQuery['category'],
       ...(q ? { q } : {}),
-      ...(source ? { source } : {}),
+      ...(source?.length ? { sources: source } : {}),
       ...(from ? { from: kstDayStart(from) } : {}),
       ...(to ? { to: kstDayStart(to, 1) } : {}),
     });

@@ -47,6 +47,18 @@ function sendError(res: Response, error: unknown): void {
   res.status(STATUS[error.code]).json({ error: error.message, code: error.code });
 }
 
+/** 링크 요약 관련 오류를 정해진 문구로 (내부 주소·원본 에러는 응답에 넣지 않음) */
+function sendLinkError(res: Response, error: unknown): void {
+  if (error instanceof LinkError) return void res.status(LINK_STATUS[error.code]).json({ error: error.message, code: error.code });
+  if (error instanceof QuotaError) return void res.status(429).json({ error: error.message, code: 'quota', scope: error.scope });
+  if (error instanceof UnreadableError) return void res.status(422).json({ error: error.message, code: 'unreadable' });
+  if (error instanceof SummaryError) {
+    console.error('[links] 요약 실패:', error.message);
+    return void res.status(502).json({ error: 'AI 요약에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'summary_failed' });
+  }
+  sendError(res, error);
+}
+
 function badTitle(res: Response, error: z.ZodError): void {
   res.status(400).json({ error: error.issues[0]?.message ?? '입력값을 확인해 주세요', fields: ['title'] });
 }
@@ -131,13 +143,45 @@ export function createBoardsRouter({ boards, notifier, links, clusters, qa }: Bo
       notifier.cardAdded(req.params.boardId, result.item, res.locals.userId!);
       res.status(201).json(result);
     } catch (error) {
-      if (error instanceof LinkError) return void res.status(LINK_STATUS[error.code]).json({ error: error.message, code: error.code });
-      if (error instanceof QuotaError) return void res.status(429).json({ error: error.message, code: 'quota', scope: error.scope });
-      if (error instanceof UnreadableError) return void res.status(422).json({ error: error.message, code: 'unreadable' });
-      if (error instanceof SummaryError) {
-        console.error('[links] 요약 실패:', error.message);
-        return void res.status(502).json({ error: 'AI 요약에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'summary_failed' });
-      }
+      sendLinkError(res, error);
+    }
+  });
+
+  /** 링크 요약 미리보기 (B12): 가져오기·요약까지만 하고 카드는 만들지 않는다 */
+  router.post('/:boardId/links/preview', async (req, res) => {
+    if (!links) return void res.status(503).json({ error: '링크 요약을 사용할 수 없습니다' });
+    const parsed = linkSchema.pick({ url: true }).safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ error: '기사 주소를 입력해 주세요', fields: ['url'] });
+    try {
+      res.json(await links.previewLink({ boardId: req.params.boardId, userId: res.locals.userId!, ip: req.ip ?? 'unknown', url: parsed.data.url }));
+    } catch (error) {
+      sendLinkError(res, error);
+    }
+  });
+
+  /** 미리보기 확인 후 "보드에 추가" */
+  router.post('/:boardId/links/confirm', async (req, res) => {
+    if (!links) return void res.status(503).json({ error: '링크 요약을 사용할 수 없습니다' });
+    const parsed = linkSchema.safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ error: '기사 주소를 입력해 주세요', fields: ['url'] });
+    try {
+      const item = await links.confirmLink({ boardId: req.params.boardId, userId: res.locals.userId!, ...parsed.data });
+      notifier.cardAdded(req.params.boardId, item, res.locals.userId!);
+      res.status(201).json({ item });
+    } catch (error) {
+      sendLinkError(res, error);
+    }
+  });
+
+  /** 뉴스 화면에서 보드를 골라 기사 추가 (B7): 그 보드의 맨 아래 왼쪽에 놓는다 */
+  router.post('/:boardId/articles', async (req, res) => {
+    const parsed = z.object({ articleId: z.string().regex(/^\d+$/) }).safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ error: '기사를 골라 주세요', fields: ['articleId'] });
+    try {
+      const item = await boards.addArticleBelow(req.params.boardId, res.locals.userId!, parsed.data.articleId);
+      notifier.cardAdded(req.params.boardId, item, res.locals.userId!);
+      res.status(201).json({ item });
+    } catch (error) {
       sendError(res, error);
     }
   });
