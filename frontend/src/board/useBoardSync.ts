@@ -419,16 +419,16 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
   /** "자동 정렬" / "원래대로" — 옮겨진 카드를 서버 결과로 반영 */
   const arrange = useCallback(
     async (clusterId: string, action: 'arrange' | 'restore') => {
+      // 실패를 "옮긴 카드 0장"과 구분해 돌려준다 — 여러 클러스터를 차례로 처리할 때 부분 실패를 알리기 위해
       try {
         const moved = await moveCluster(boardId, clusterId, action)
         moved.forEach(settle)
-        return moved.length
+        return { ok: true, moved: moved.length }
       } catch {
-        fail(action === 'arrange' ? '자동 정렬하지 못했습니다' : '원래대로 되돌리지 못했습니다')
-        return 0
+        return { ok: false, moved: 0 }
       }
     },
-    [boardId, settle, fail],
+    [boardId, settle],
   )
 
   /** 연결선 (F-10): 서버 ack로 확정한다 (선은 가볍고 중복·삭제된 카드 검사가 서버에 있어 낙관적 반영은 하지 않음) */

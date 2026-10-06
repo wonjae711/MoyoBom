@@ -28,6 +28,8 @@ export interface MemoEdit {
   text: string
   saving: boolean
   error: 'empty' | 'fail' | null
+  /** 편집 세션 번호 (늦게 온 저장 결과를 다른 편집에 적용하지 않기 위해) */
+  session: number
 }
 
 interface Props {
@@ -120,7 +122,8 @@ export function BoardCanvas(props: Props) {
     const el = viewportRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      if (e.target instanceof Element && e.target.closest('[data-ui]')) return
+      // 메모 입력처럼 스스로 스크롤하는 곳의 휠은 그 요소에 맡긴다 (Codex 281c5f2 리뷰 2)
+      if (e.target instanceof Element && e.target.closest('[data-ui], textarea, input, select, [data-scroll]')) return
       e.preventDefault()
       const v = viewRef.current
       if (e.ctrlKey || e.metaKey) {
@@ -450,10 +453,13 @@ function Card({
                   autoFocus
                   rows={4}
                   maxLength={2000}
+                  readOnly={editing.saving}
+                  aria-busy={editing.saving}
                   value={editing.text}
                   placeholder="의견, 질문, 관찰을 적어 보세요"
                   onChange={(e) => props.onMemoChange(e.target.value)}
                   onKeyDown={(e) => {
+                    if (editing.saving) return
                     if (e.key === 'Escape') props.onMemoCancel()
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) props.onMemoSave()
                   }}

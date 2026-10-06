@@ -15,6 +15,7 @@ import { AiPanel, ArticleDetail, SidePanel, type AiState, type DetailArticle } f
 import { ZOOM_STEP, categoryLabel, centerOn, fitView, toBoard, zoomAt, type View } from './cardLayout'
 import { sourceDiversity } from './diversity'
 import { FeedPanel } from './FeedPanel'
+import { arrangeOutcome, type ArrangeResult } from './arrangeOutcome'
 import { ROLE_LABEL } from './roles'
 import type { BoardItem } from './types'
 import { useBoardSync, type ViewItem } from './useBoardSync'
@@ -94,6 +95,8 @@ export function BoardPage() {
   const [connectMode, setConnectMode] = useState(false)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
   const [memoEdit, setMemoEdit] = useState<MemoEdit | null>(null)
+  /** 메모 편집 세션 번호 — 늦게 온 저장 결과가 다른(새) 편집을 닫지 않게 (Codex 281c5f2 리뷰 1) */
+  const memoSession = useRef(0)
   const [draftAt, setDraftAt] = useState<{ x: number; y: number } | null>(null)
   const [newsOpen, setNewsOpen] = useState(() => window.innerWidth >= 1100)
   const [right, setRight] = useState<Right | null>(null)
@@ -201,20 +204,21 @@ export function BoardPage() {
 
   // ---------- 메모 (카드 안에서 편집, B9) ----------
   const addMemo = () => {
-    if (locked) return
+    if (locked || memoEdit?.saving) return
     const c = viewCenter()
     setDraftAt(c)
     setSelectedId(DRAFT_MEMO_ID)
     setTool('select')
-    setMemoEdit({ id: DRAFT_MEMO_ID, text: '', saving: false, error: null })
+    setMemoEdit({ id: DRAFT_MEMO_ID, text: '', saving: false, error: null, session: ++memoSession.current })
   }
   const editMemo = (id: string) => {
-    if (locked) return
+    if (locked || memoEdit?.saving) return
     const item = board.items.find((i) => i.id === id)
     setDraftAt(null)
-    setMemoEdit({ id, text: item?.content ?? '', saving: false, error: null })
+    setMemoEdit({ id, text: item?.content ?? '', saving: false, error: null, session: ++memoSession.current })
   }
   const cancelMemo = () => {
+    if (memoEdit?.saving) return // 저장 중에는 취소·다른 편집으로 넘어가지 않는다 (입력도 잠금)
     if (memoEdit?.id === DRAFT_MEMO_ID) setSelectedId(null)
     setMemoEdit(null)
     setDraftAt(null)
@@ -223,19 +227,21 @@ export function BoardPage() {
     if (!memoEdit || memoEdit.saving) return
     const text = memoEdit.text.trim()
     if (!text) return setMemoEdit({ ...memoEdit, error: 'empty' })
+    const session = memoEdit.session
     setMemoEdit({ ...memoEdit, saving: true, error: null })
+    // 결과는 시작한 편집 세션에만 적용한다
+    const settle = (ok: boolean) =>
+      setMemoEdit((m) => (m?.session !== session ? m : ok ? null : { ...m, saving: false, error: 'fail' }))
     if (memoEdit.id === DRAFT_MEMO_ID && draftAt) {
       const item = await board.addCard({ type: 'memo', content: text }, draftAt.x, draftAt.y)
+      settle(Boolean(item))
       if (item) {
-        setMemoEdit(null)
         setDraftAt(null)
         setSelectedId(item.id)
-      } else setMemoEdit((m) => m && { ...m, saving: false, error: 'fail' })
+      }
       return
     }
-    const ok = await board.updateMemo(memoEdit.id, text)
-    if (ok) setMemoEdit(null)
-    else setMemoEdit((m) => m && { ...m, saving: false, error: 'fail' })
+    settle(await board.updateMemo(memoEdit.id, text))
   }
 
   const deleteCard = async (id: string) => {
@@ -290,17 +296,17 @@ export function BoardPage() {
   const arrangeAll = async (action: 'arrange' | 'restore') => {
     setAiBusy(true)
     const byId = new Map(board.items.map((i) => [i.id, i]))
-    let moved = 0
+    const results: ArrangeResult[] = []
     for (const cluster of board.clusters) {
       const members = cluster.itemIds.map((id) => byId.get(id)).filter(Boolean) as ViewItem[]
       const need = action === 'arrange' ? members.some((i) => !i.arranged) : members.some((i) => i.arranged)
-      if (need) moved += await board.arrange(cluster.id, action)
+      if (need) results.push(await board.arrange(cluster.id, action))
     }
     setAiBusy(false)
-    if (moved > 0) {
-      showToast(action === 'arrange' ? '이슈별로 카드를 정렬했어요.' : '자동 정렬 전 위치로 되돌렸어요.', { tone: 'ok' })
-      setTimeout(() => setView(fitView(board.items, heights, size.width, size.height)), 60)
-    } else if (action === 'restore') showToast('되돌릴 카드가 없어요. 정렬 뒤 직접 옮긴 카드는 그대로 둬요.', { tone: 'info' })
+    const outcome = arrangeOutcome(results, action)
+    if (outcome) showToast(outcome.text, { tone: outcome.tone })
+    if (outcome?.tone === 'err') setSyncFailed(true)
+    if (results.some((r) => r.ok && r.moved > 0)) setTimeout(() => setView(fitView(board.items, heights, size.width, size.height)), 60)
   }
   const dismissAll = async () => {
     for (const cluster of board.clusters) await board.dismiss(cluster.id)
@@ -310,8 +316,9 @@ export function BoardPage() {
   }
   const onClusterAction = async (clusterId: string, action: ClusterAction) => {
     if (action === 'dismiss') return void board.dismiss(clusterId)
-    const count = await board.arrange(clusterId, action)
-    if (action === 'restore' && count === 0) showToast('되돌릴 카드가 없어요. 정렬 뒤 직접 옮긴 카드는 그대로 둬요.', { tone: 'info' })
+    const outcome = arrangeOutcome([await board.arrange(clusterId, action)], action)
+    if (outcome && outcome.tone !== 'ok') showToast(outcome.text, { tone: outcome.tone })
+    if (outcome?.tone === 'err') setSyncFailed(true)
   }
   const highlight = useMemo(() => {
     const cluster = highlightId ? board.clusters.find((c) => c.id === highlightId) : null
