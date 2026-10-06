@@ -1,35 +1,46 @@
 .app-header {
+  position: relative;
+  z-index: 20;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 0 34px;
-  height: 64px;
-  background: var(--color-white);
-  border-bottom: 1px solid var(--color-gray-light);
+  gap: 28px;
+  height: 56px;
+  padding: 0 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--line-border);
 }
 
 .app-header__brand {
-  font-weight: 800;
-  font-size: 20px;
-  letter-spacing: -0.5px;
-  color: var(--color-black);
+  display: flex;
+  color: var(--fg-text);
   text-decoration: none;
 }
 
 .app-header__nav {
   display: flex;
-  gap: 16px;
+  gap: 4px;
+  align-self: stretch;
 }
 
 .app-header__nav a {
-  font-size: 12.5px;
-  color: var(--color-gray-dark);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg-text-2);
   text-decoration: none;
 }
 
+.app-header__nav a:hover {
+  color: var(--fg-text);
+}
+
+/* 현재 화면: 보라 밑줄 */
 .app-header__nav a.active {
-  color: var(--color-black);
-  font-weight: 600;
+  color: var(--fg-text);
+  box-shadow: inset 0 -2px 0 var(--line-primary);
 }
 
 .app-header__spacer {
@@ -37,17 +48,62 @@
 }
 
 .app-header__user {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12.5px;
-  color: var(--color-gray-dark);
+  position: relative;
 }
 
-.app-header__error {
-  padding: 4px 8px;
-  border-left: 3px solid var(--color-black);
-  background: var(--color-off-white);
-  color: var(--color-black);
-  font-size: 11.5px;
+.app-header__me {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-header__me:hover {
+  background: var(--bg-canvas);
+}
+
+.app-header__initial {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-primary-soft);
+  color: var(--fg-primary-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.app-header__menu {
+  right: 0;
+  top: 44px;
+  width: 240px;
+}
+
+.app-header__menu-name {
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--fg-text-2);
+}
+
+.app-header__menu-name b {
+  color: var(--fg-text);
+  font-weight: 600;
+}
+
+.app-header__menu-state {
+  font-size: 13px;
+  color: var(--fg-text-2);
+}
+
+.app-header__menu-error {
+  margin: 0 4px;
+  padding: 8px 10px;
+  font-size: 13px;
 }

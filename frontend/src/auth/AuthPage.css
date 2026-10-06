@@ -1,100 +1,106 @@
+/* 로그인·회원가입 (F-07) — 보라 테마 프로토타입 */
+
 .auth {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
+  background: var(--bg-app);
 }
 
-.auth__panel {
+.auth--login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+}
+
+.auth--signup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.auth__left {
+  display: flex;
+  flex-direction: column;
+  padding: 40px clamp(24px, 6vw, 88px);
+}
+
+.auth__left > .logo .logo__name {
+  font-size: 18px;
+}
+
+.auth__center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 32px 0;
+}
+
+.auth__card {
   width: 100%;
   max-width: 400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px;
+  border: 1px solid var(--line-border);
+  border-radius: 16px;
+  background: var(--bg-surface);
+  box-sizing: content-box;
 }
 
-.auth__brand {
+.auth__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth__heading h1 {
   margin: 0;
-  font-family: Georgia, 'Noto Serif KR', 'Nanum Myeongjo', serif;
-  font-size: 2.2rem;
-  text-align: center;
+  font-size: 28px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.auth__tagline {
-  margin: 6px 0 24px;
-  text-align: center;
-  color: var(--color-gray-dark);
-  font-size: 0.9rem;
+.auth--signup .auth__heading h1 {
+  font-size: 26px;
+}
+
+.auth__heading p {
+  margin: 0;
+  color: var(--fg-text-2);
+  font-size: 15.5px;
 }
 
 .auth__form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 24px;
-  background: var(--color-white);
-  border: 1px solid var(--color-gray-light);
-  border-radius: 10px;
-}
-
-.auth__title {
-  margin: 0 0 4px;
-  font-size: 1.15rem;
-}
-
-.auth__field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.9rem;
-}
-
-.auth__field small {
-  color: var(--color-gray-mid);
-}
-
-.auth__field input {
-  padding: 10px 12px;
-  border: 1px solid var(--color-gray-light);
-  border-radius: 6px;
-  font: inherit;
-  color: var(--color-black);
-  background: var(--color-white);
-}
-
-.auth__field input:focus {
-  outline: 2px solid var(--color-black);
-  outline-offset: -1px;
-  border-color: var(--color-black);
-}
-
-.auth__error {
-  margin: 0;
-  padding: 8px 10px;
-  border-left: 3px solid var(--color-black);
-  background: var(--color-off-white);
-  font-size: 0.88rem;
+  gap: 16px;
 }
 
 .auth__submit {
-  padding: 11px;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-black);
-  color: var(--color-white);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.auth__submit:disabled {
-  opacity: 0.6;
-  cursor: wait;
+.auth__submit-btn {
+  height: 46px;
+  font-size: 15px;
+}
+
+.auth__recent-note {
+  font-size: 12.5px;
+  color: var(--fg-text-2);
+  text-align: center;
 }
 
 .auth__divider {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: var(--color-gray-mid);
-  font-size: 0.8rem;
+  gap: 12px;
+  color: var(--fg-muted);
+  font-size: 13px;
 }
 
 .auth__divider::before,
@@ -102,60 +108,174 @@
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--color-gray-light);
+  background: var(--bg-border);
 }
 
+.auth__social-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 카카오·네이버 고유 색은 두 테마 공통 */
 .auth__social {
-  padding: 10px;
-  border: 1px solid var(--color-gray-light);
-  border-radius: 6px;
-  background: var(--color-off-white);
-  color: var(--color-gray-dark);
-  font: inherit;
-  font-size: 0.9rem;
-}
-
-.auth__social:disabled {
-  cursor: not-allowed;
-}
-
-/* 카카오 로그인 버튼 디자인 가이드: 노란 배경(#FEE500) + 검정 글자 */
-.auth__social--kakao:enabled {
-  border-color: #fee500;
-  background: #fee500;
-  color: rgba(0, 0, 0, 0.85);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  border: none;
+  border-radius: 9px;
+  font-size: 15px;
   font-weight: 600;
-  cursor: pointer;
+}
+
+.auth__social--kakao {
+  background: #fee500;
+  color: #191600;
+}
+
+.auth__social--naver {
+  background: #03c75a;
+  color: #ffffff;
+}
+
+.auth__kakao-mark {
+  width: 18px;
+  height: 16px;
+  border-radius: 50%;
+  background: #191600;
+}
+
+.auth__naver-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #03c75a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.auth__recent {
+  position: absolute;
+  right: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auth__recent--kakao {
+  color: #3a3500;
+}
+
+.auth__recent--naver {
+  color: #027a38;
 }
 
 .auth__switch {
-  margin: 4px 0 0;
-  text-align: center;
-  font-size: 0.88rem;
-  color: var(--color-gray-dark);
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--fg-text-2);
 }
 
 .auth__switch a {
-  color: var(--color-black);
   font-weight: 600;
 }
 
-.auth__social--naver:enabled {
-  border-color: #03c75a;
-  background: #03c75a;
-  color: #ffffff;
-  font-weight: 600;
-  cursor: pointer;
+/* ---------- 오른쪽 보드 그림 ---------- */
+.auth__art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  overflow: hidden;
+  background: var(--bg-canvas);
+  background-image: radial-gradient(var(--bg-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
-/* 최근 로그인 방식 (결정 A) */
-.auth__recent {
-  margin-left: 8px;
-  padding: 2px 7px;
-  border-radius: 10px;
-  background: var(--color-black);
-  color: var(--color-white);
-  font-size: 0.7rem;
+.auth__art-board {
+  position: relative;
+  width: 560px;
+  height: 440px;
+}
+
+.auth__art-title {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--fg-text-2);
+}
+
+.auth__art-title b {
+  font-size: 16px;
+  color: var(--fg-text);
+}
+
+.auth__art-card {
+  position: absolute;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.auth__art-card--selected {
+  border-color: var(--line-primary);
+  box-shadow: 0 0 0 1px var(--line-primary);
+}
+
+.auth__art-card--memo {
+  border-color: var(--line-memo-line);
+  background: var(--bg-memo);
+}
+
+.auth__art-kind {
+  font-size: 12px;
   font-weight: 600;
-  vertical-align: middle;
+  color: var(--fg-text-2);
+}
+
+.auth__art-card--memo .auth__art-kind {
+  color: var(--fg-memo-ink);
+}
+
+.auth__art-head {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.auth__art-meta {
+  font-size: 12.5px;
+  color: var(--fg-text-2);
+}
+
+@media (max-width: 959px) {
+  .auth--login {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auth__art {
+    display: none;
+  }
 }

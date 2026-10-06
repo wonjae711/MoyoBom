@@ -1,7 +1,5 @@
 import './common.css'
 
-const AVATAR_COLORS = ['#212121', '#5C6670', '#8A939B']
-
 /** 참여자 동그라미 (닉네임 첫 글자). 최대 max명, 나머지는 +N */
 export function Avatars({ names, size = 30, max = 4 }: { names: string[]; size?: number; max?: number }) {
   const shown = names.slice(0, max)
@@ -13,7 +11,7 @@ export function Avatars({ names, size = 30, max = 4 }: { names: string[]; size?:
           key={`${name}-${i}`}
           className="avatar"
           title={name}
-          style={{ width: size, height: size, fontSize: size * 0.37, background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+          style={{ width: size, height: size, fontSize: size * 0.4 }}
         >
           {Array.from(name)[0] ?? '?'}
         </span>

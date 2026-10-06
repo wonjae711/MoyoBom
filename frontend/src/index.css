@@ -1,49 +1,228 @@
-/* 디자인 팔레트 (Notion "디자인(UI/UX)" 페이지 기준) */
+/* 보라 테마 "라벤더 리서치 스튜디오" 색 토큰 — docs/MoyoBom frontend UI mockups (프로토타입 :root와 같게 유지).
+   글자(fg)·면(bg)·선(line) 용도별로 나누고, 다크 모드는 :root[data-theme="dark"]에서 값만 바꾼다 */
 :root {
-  --color-black: #212121;
-  --color-charcoal: #36454f; /* 협업 보드 캔버스 배경 */
-  --color-gray-dark: #5c6670;
-  --color-gray-mid: #8a939b;
-  --color-gray-light: #e4e6e8;
-  --color-off-white: #f4f5f6;
-  --color-white: #ffffff;
+  color-scheme:light;
+  --shadow-rgb:36,27,53;
+  --surface-rgb:255,255,255;
+  --canvas-rgb:242,239,248;
+  --app-rgb:247,245,252;
+  --bg-app:#F7F5FC;
+  --bg-border:#E2DBEC;
+  --bg-canvas:#F2EFF8;
+  --bg-divider:#F0ECF6;
+  --bg-dot-neutral:#9A8FA6;
+  --bg-error:#B42318;
+  --bg-error-soft:#FDEDEC;
+  --bg-grid:#DCD3E8;
+  --bg-memo:#FFF0B0;
+  --bg-memo-strip:#FAE27F;
+  --bg-memo-input:#FFFCF2;
+  --bg-primary:#6D28D9;
+  --bg-primary-hover:#5B21B6;
+  --bg-primary-ink:#4C1D95;
+  --bg-primary-soft:#EDE9FE;
+  --bg-primary-soft-2:#DDD6FE;
+  --bg-selected:#F0EAFE;
+  --bg-success:#23734D;
+  --bg-success-soft:#E7F4EC;
+  --bg-surface:#FFFFFF;
+  --bg-surface-subtle:#FAF8FF;
+  --bg-text:#241B35;
+  --bg-warn-soft:#FFF5E1;
+  --fg-canvas:#F2EFF8;
+  --fg-divider:#F0ECF6;
+  --fg-dot-neutral:#9A8FA6;
+  --fg-error:#B42318;
+  --fg-error-ink:#912018;
+  --fg-icon-faint:#A99FB5;
+  --fg-memo-ink:#6B5310;
+  --fg-muted:#756A80;
+  --fg-primary:#6D28D9;
+  --fg-primary-hover:#5B21B6;
+  --fg-primary-ink:#4C1D95;
+  --fg-success:#23734D;
+  --fg-success-ink:#1B5E3E;
+  --fg-surface:#FFFFFF;
+  --fg-text:#241B35;
+  --fg-text-2:#62566F;
+  --fg-text-body:#3F3450;
+  --fg-warn:#8A5700;
+  --fg-warn-ink:#5C3B00;
+  --fg-warn-ink-2:#6E4600;
+  --line-border:#E2DBEC;
+  --line-border-strong:#D3CADF;
+  --line-divider:#F0ECF6;
+  --line-divider-2:#EAE4F2;
+  --line-error:#B42318;
+  --line-error-line:#E7B7B2;
+  --line-memo-input-line:#D9C48A;
+  --line-memo-line:#EBD9A8;
+  --line-memo-line-2:#E6CF8A;
+  --line-muted:#756A80;
+  --line-primary:#6D28D9;
+  --line-primary-line:#C4B5FD;
+  --line-primary-line-2:#A78BFA;
+  --line-primary-soft-2:#DDD6FE;
+  --line-success-line:#A9D3BA;
+  --line-surface:#FFFFFF;
+  --line-text:#241B35;
+  --line-warn-line:#EBCB8B;
+  --line-warn-line-2:#D8AE5C;
+}
 
-  --font-sans: 'IBM Plex Sans KR', system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-  --font-serif: 'Nanum Myeongjo', serif; /* 제목 */
-  --font-hand: 'Gaegu', cursive; /* 메모 카드 */
+:root[data-theme='dark'] {
+  color-scheme:dark;
+  --shadow-rgb:0,0,0;
+  --surface-rgb:33,28,44;
+  --canvas-rgb:28,24,38;
+  --app-rgb:23,20,31;
+  --bg-app:#17141F;
+  --bg-border:#362F45;
+  --bg-canvas:#1C1826;
+  --bg-divider:#2B2537;
+  --bg-dot-neutral:#7D7290;
+  --bg-error:#B42318;
+  --bg-error-soft:#3A1E22;
+  --bg-grid:#352E44;
+  --bg-memo:#4A3F1E;
+  --bg-memo-strip:#5A4C22;
+  --bg-memo-input:#2F2919;
+  --bg-primary:#7C3AED;
+  --bg-primary-hover:#6D28D9;
+  --bg-primary-ink:#5B21B6;
+  --bg-primary-soft:#2E2448;
+  --bg-primary-soft-2:#3A2D5C;
+  --bg-selected:#2A2140;
+  --bg-success:#23734D;
+  --bg-success-soft:#183326;
+  --bg-surface:#211C2C;
+  --bg-surface-subtle:#262033;
+  --bg-text:#3D3550;
+  --bg-warn-soft:#352A15;
+  --fg-canvas:#1C1826;
+  --fg-divider:#2B2537;
+  --fg-dot-neutral:#7D7290;
+  --fg-error:#FF8A80;
+  --fg-error-ink:#FFB4AB;
+  --fg-icon-faint:#6F6580;
+  --fg-memo-ink:#E3C98A;
+  --fg-muted:#9E93AC;
+  --fg-primary:#C4A8FF;
+  --fg-primary-hover:#C4A8FF;
+  --fg-primary-ink:#DDD0FF;
+  --fg-success:#6FD3A0;
+  --fg-success-ink:#9BE3BC;
+  --fg-surface:#FFFFFF;
+  --fg-text:#EDE7F6;
+  --fg-text-2:#B3A8C2;
+  --fg-text-body:#D2C9DF;
+  --fg-warn:#E6B85C;
+  --fg-warn-ink:#F2D08C;
+  --fg-warn-ink-2:#F2D08C;
+  --line-border:#362F45;
+  --line-border-strong:#4A4159;
+  --line-divider:#2B2537;
+  --line-divider-2:#2E2839;
+  --line-error:#C4473F;
+  --line-error-line:#6B3337;
+  --line-memo-input-line:#7A6840;
+  --line-memo-line:#5E5034;
+  --line-memo-line-2:#6A5A36;
+  --line-muted:#9E93AC;
+  --line-primary:#A78BFA;
+  --line-primary-line:#6B54A8;
+  --line-primary-line-2:#8B6FD6;
+  --line-primary-soft-2:#5B4790;
+  --line-success-line:#2F5E45;
+  --line-surface:#2B2537;
+  --line-text:#3D3550;
+  --line-warn-line:#6B5426;
+  --line-warn-line-2:#8A6A2A;
+}
 
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  color: var(--color-black);
-  background: var(--color-off-white);
+:root {
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic',
+    system-ui, sans-serif;
+  --shadow-menu: 0 12px 32px rgba(var(--shadow-rgb), 0.14);
+  --shadow-modal: 0 24px 56px rgba(var(--shadow-rgb), 0.22);
+  --shadow-drag: 0 14px 30px rgba(var(--shadow-rgb), 0.18);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  background: var(--bg-app);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--fg-text);
+  -webkit-font-smoothing: antialiased;
+  /* 긴 한국어 제목은 어절 단위로, 띄어쓰기 없는 긴 영어 단어·주소는 넘치지 않게 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 input,
 button,
-textarea {
+textarea,
+select {
   font-family: inherit;
+  color: var(--fg-text);
+}
+
+input,
+textarea,
+select {
+  background-color: var(--bg-surface);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--line-primary);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--fg-primary);
+}
+
+a:hover {
+  color: var(--fg-primary-hover);
 }
 
 ::selection {
-  background: var(--color-black);
-  color: var(--color-white);
+  background: var(--bg-primary-soft-2);
+  color: var(--fg-primary-ink);
 }
 
-@keyframes pulse {
+@keyframes mbspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mbpulse {
   0%,
   100% {
-    opacity: 1;
+    opacity: 0.55;
   }
   50% {
-    opacity: 0.25;
+    opacity: 1;
   }
 }
 
@@ -61,10 +240,28 @@ textarea {
 @keyframes toastIn {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* 이전 흑백 팔레트 이름 — 화면을 하나씩 보라 테마로 옮기는 동안만 쓰는 임시 연결 (모두 옮기면 지운다) */
+:root {
+  --color-black: var(--fg-text);
+  --color-charcoal: var(--bg-canvas);
+  --color-gray-dark: var(--fg-text-2);
+  --color-gray-mid: var(--fg-muted);
+  --color-gray-light: var(--line-border);
+  --color-off-white: var(--bg-app);
+  --color-white: var(--bg-surface);
 }
