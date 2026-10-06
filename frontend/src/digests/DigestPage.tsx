@@ -18,7 +18,8 @@ import {
   type Subscription,
   type SubscriptionInput,
 } from './api'
-import { adjustUnread, onDigestArrived, setUnread } from './unread'
+import { mergeDigests } from './merge'
+import { adjustUnread, onDigestArrived, onDigestResync, refreshUnread, setUnread } from './unread'
 import './DigestPage.css'
 
 const CATEGORY_CODES = Object.keys(CATEGORY_LABELS) as CategoryCode[]
@@ -54,6 +55,20 @@ export function DigestPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // 연결이 끊겼다 돌아오면 그 사이 도착분을 받아 합친다 (더 불러온 이전 항목·스크롤은 유지)
+  useEffect(
+    () =>
+      onDigestResync(() => {
+        listDigests()
+          .then((page) => {
+            setDigests((list) => mergeDigests(list, page.digests))
+            setUnread(page.unread)
+          })
+          .catch(() => {})
+      }),
+    [],
+  )
 
   // 예약 다이제스트가 화면을 보는 중에 도착하면 맨 위에 넣는다
   const showToast = toast.show
@@ -111,13 +126,14 @@ export function DigestPage() {
     setRunning(sub.id)
     try {
       const digest = await runNow(sub.id)
-      setDigests((list) => (list.some((d) => d.id === digest.id) ? list : [digest, ...list]))
-      // 화면에서 바로 보이므로 안 읽은 개수에 넣지 않는다 (소켓 알림으로 하나 늘어난 것은 읽음으로 처리)
-      await markRead(digest.id).catch(() => {})
-      setDigests((list) => list.map((d) => (d.id === digest.id ? { ...d, readAt: new Date().toISOString() } : d)))
-      listDigests({ limit: 1 })
-        .then((page) => setUnread(page.unread))
-        .catch(() => {})
+      setDigests((list) => mergeDigests(list, [digest]))
+      // 화면에서 바로 보이므로 읽음으로 처리한다. 서버가 읽음 처리에 성공했을 때만 화면도 읽음으로 바꾼다 (Codex 068152f 리뷰 2)
+      const read = await markRead(digest.id).then(
+        () => true,
+        () => false,
+      )
+      if (read) setDigests((list) => list.map((d) => (d.id === digest.id ? { ...d, readAt: new Date().toISOString() } : d)))
+      refreshUnread()
       toast.show(digest.status === 'empty' ? '최근 24시간에 새 소식이 없습니다' : '다이제스트를 만들었습니다')
     } catch (e) {
       toast.show(errorText(e, '다이제스트를 만들지 못했습니다'))
@@ -126,11 +142,18 @@ export function DigestPage() {
     }
   }
 
+  /** 먼저 읽음으로 보이고, 서버가 실패하면 되돌려 다시 누를 수 있게 한다 (Codex 068152f 리뷰 2) */
   const read = async (digest: Digest) => {
     if (digest.readAt) return
     setDigests((list) => list.map((d) => (d.id === digest.id ? { ...d, readAt: new Date().toISOString() } : d)))
     adjustUnread(-1)
-    await markRead(digest.id).catch(() => {})
+    try {
+      await markRead(digest.id)
+    } catch (e) {
+      setDigests((list) => list.map((d) => (d.id === digest.id ? { ...d, readAt: null } : d)))
+      adjustUnread(1)
+      toast.show(errorText(e, '읽음으로 바꾸지 못했어요. 다시 눌러 주세요.'), { tone: 'err' })
+    }
   }
 
   const readAll = async () => {
@@ -138,7 +161,7 @@ export function DigestPage() {
       await markAllRead()
       const now = new Date().toISOString()
       setDigests((list) => list.map((d) => ({ ...d, readAt: d.readAt ?? now })))
-      setUnread(0)
+      refreshUnread()
     } catch (e) {
       toast.show(errorText(e, '읽음으로 바꾸지 못했습니다'))
     }

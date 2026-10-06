@@ -247,8 +247,12 @@ export class DigestService {
     if (!rowCount) throw new DigestError('not_found', '알림을 찾을 수 없습니다');
   }
 
+  /** 아직 만드는 중(pending)인 다이제스트는 건드리지 않는다 — 도착하는 순간 이미 읽음이 되지 않도록 (Codex 068152f 리뷰 3) */
   async markAllRead(userId: string): Promise<void> {
-    await this.deps.pool.query('UPDATE digests SET read_at = now() WHERE user_id = $1 AND read_at IS NULL', [userId]);
+    await this.deps.pool.query(
+      `UPDATE digests SET read_at = now() WHERE user_id = $1 AND read_at IS NULL AND status <> 'pending'`,
+      [userId],
+    );
   }
 
   async deleteOldDigests(now: Date = new Date(), days = DIGEST_RETENTION_DAYS): Promise<number> {
@@ -267,6 +271,11 @@ export class DigestService {
    * (구독, 받는 시각)에 pending 행을 먼저 넣은 실행만 진행하므로 겹쳐 실행돼도 한 번만 만든다.
    */
   async runDue(now: Date = new Date()): Promise<Digest[]> {
+    // "지금 받아보기" 도중 서버가 꺼져 남은 행 정리 (요청 안에서 실패한 경우는 runNow가 바로 지우고 환불한다)
+    await this.deps.pool.query(
+      `DELETE FROM digests WHERE kind = 'manual' AND status = 'pending' AND created_at < now() - make_interval(secs => $1)`,
+      [STALE_PENDING_MS / 1000],
+    );
     const { rows: subs } = await this.deps.pool.query<SubscriptionRow>(
       'SELECT * FROM digest_subscriptions WHERE active ORDER BY id',
     );
@@ -317,16 +326,35 @@ export class DigestService {
     if (!sub) throw new DigestError('not_found', '구독을 찾을 수 없습니다');
     const quota = await this.deps.manualQuota.consume(DIGEST_MANUAL_FEATURE, userId, ip);
     if (!quota.ok) throw new QuotaError(quota.scope, quota.limit);
-    const refund = () => this.deps.manualQuota.refund(DIGEST_MANUAL_FEATURE, userId, ip);
+    // 환불은 한 번만 (AI 실패 환불 뒤 저장까지 실패해도 두 번 돌려주지 않게)
+    let refunded = false;
+    const refund = async () => {
+      if (refunded) return;
+      refunded = true;
+      await this.deps.manualQuota.refund(DIGEST_MANUAL_FEATURE, userId, ip);
+    };
 
     const windowStart = new Date(now.getTime() - MAX_WINDOW_MS);
-    const { rows: claimed } = await this.deps.pool.query<{ id: string }>(
-      `INSERT INTO digests (user_id, subscription_id, kind, window_start, window_end)
-       VALUES ($1, $2, 'manual', $3, $4) RETURNING id`,
-      [userId, sub.id, windowStart, now],
-    );
-    // 기사가 없어 AI를 부르지 않았으면 횟수를 돌려준다 (fill 안에서 처리)
-    return (await this.fill(claimed[0]!.id, sub, windowStart, now, async () => refund, refund))!;
+    let digestId: string | null = null;
+    try {
+      const { rows: claimed } = await this.deps.pool.query<{ id: string }>(
+        `INSERT INTO digests (user_id, subscription_id, kind, window_start, window_end)
+         VALUES ($1, $2, 'manual', $3, $4) RETURNING id`,
+        [userId, sub.id, windowStart, now],
+      );
+      digestId = claimed[0]!.id;
+      // 기사가 없어 AI를 부르지 않았으면 횟수를 돌려준다 (fill 안에서 처리)
+      return await this.fill(digestId, sub, windowStart, now, async () => refund, refund);
+    } catch (error) {
+      // 결과를 만들지 못했으면 숨겨진 채 남는 "만드는 중" 행을 지우고 횟수를 돌려준다 (Codex 068152f 리뷰 4)
+      if (digestId) {
+        await this.deps.pool
+          .query(`DELETE FROM digests WHERE id = $1 AND status = 'pending'`, [digestId])
+          .catch(() => {});
+      }
+      await refund().catch(() => {});
+      throw error;
+    }
   }
 
   /**

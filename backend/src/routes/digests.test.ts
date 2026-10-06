@@ -268,6 +268,40 @@ describe.skipIf(!testDatabaseUrl)('[F-09] 뉴스 다이제스트 (DB)', () => {
       expect((await inbox()).unread).toBe(0);
     });
 
+    it('[Codex 068152f 리뷰 3] "모두 읽음"은 아직 만드는 중인 다이제스트를 건드리지 않는다', async () => {
+      const { body } = await subscribe({ categories: ['economy'], sendHour: 8 });
+      await pool.query(
+        `INSERT INTO digests (user_id, subscription_id, kind, slot, window_start, window_end) VALUES ($1, $2, 'scheduled', $3, $3, $3)`,
+        [me.id, body.subscription.id, SLOT],
+      );
+      await request(app).post('/api/digests/read-all').set('Cookie', me.cookie);
+      const { rows } = await pool.query(`SELECT read_at FROM digests WHERE status = 'pending'`);
+      expect(rows[0].read_at).toBeNull();
+    });
+
+    it('[Codex 068152f 리뷰 4] "지금 받아보기"가 도중에 실패하면 만드는 중 행을 지우고 횟수를 돌려준다', async () => {
+      makeApp({ user: 1, ip: 10, total: 100 });
+      const { body } = await subscribe({ categories: ['economy'], sendHour: 8 });
+      await article('방금 들어온 금리 기사', { collectedAt: new Date() });
+      write.mockRejectedValueOnce(new Error('DB 연결 끊김')); // AI 실패가 아닌 예상 못 한 오류
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const run = () => request(app).post(`/api/digests/subscriptions/${body.subscription.id}/run`).set('Cookie', me.cookie);
+      expect((await run()).status).toBe(500);
+      expect((await pool.query(`SELECT 1 FROM digests`)).rowCount).toBe(0);
+      expect((await run()).status).toBe(201); // 횟수를 돌려받아 한도 1회로 다시 할 수 있다
+    });
+
+    it('[Codex 068152f 리뷰 4] 서버가 꺼져 남은 "지금 받아보기" 만드는 중 행은 다음 확인 때 지운다', async () => {
+      const { body } = await subscribe({ categories: ['economy'], sendHour: 8 });
+      await pool.query(
+        `INSERT INTO digests (user_id, subscription_id, kind, window_start, window_end, created_at)
+         VALUES ($1, $2, 'manual', now(), now(), now() - interval '11 minutes')`,
+        [me.id, body.subscription.id],
+      );
+      await service.runDue(new Date(SLOT.getTime() - 3_600_000));
+      expect((await pool.query(`SELECT 1 FROM digests WHERE kind = 'manual'`)).rowCount).toBe(0);
+    });
+
     it('30일 지난 알림은 정리한다', async () => {
       await subscribe({ categories: ['economy'], sendHour: 8 });
       await service.runDue(AFTER);
