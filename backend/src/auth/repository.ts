@@ -1,8 +1,9 @@
 import type pg from 'pg';
 
+/** 'local'은 2026-10-06에 없앤 이메일 가입의 예전 계정 (더 이상 로그인할 수 없다) */
 export type Provider = 'local' | 'kakao' | 'naver';
 
-/** 화면에 내려주는 사용자 정보 (비밀번호 해시 등은 포함하지 않는다) */
+/** 화면에 내려주는 사용자 정보 */
 export interface PublicUser {
   id: string;
   email: string | null;
@@ -15,45 +16,12 @@ interface UserRow {
   email: string | null;
   nickname: string;
   provider: Provider;
-  password_hash: string | null;
 }
 
 function toPublicUser(row: UserRow): PublicUser {
   return { id: row.id, email: row.email, nickname: row.nickname, provider: row.provider };
 }
 
-/** 이메일 중복이면 null (users_local_email_key 위반) */
-export async function createLocalUser(
-  pool: pg.Pool,
-  input: { email: string; passwordHash: string; nickname: string },
-): Promise<PublicUser | null> {
-  const { rows } = await pool.query<UserRow>(
-    `INSERT INTO users (email, password_hash, provider, nickname)
-     VALUES ($1, $2, 'local', $3)
-     ON CONFLICT (lower(email)) WHERE provider = 'local' DO NOTHING
-     RETURNING id, email, nickname, provider, password_hash`,
-    [input.email, input.passwordHash, input.nickname],
-  );
-  return rows[0] ? toPublicUser(rows[0]) : null;
-}
-
-export async function findLocalUserByEmail(
-  pool: pg.Pool,
-  email: string,
-): Promise<{ user: PublicUser; passwordHash: string } | null> {
-  const { rows } = await pool.query<UserRow>(
-    `SELECT id, email, nickname, provider, password_hash FROM users
-     WHERE provider = 'local' AND lower(email) = lower($1)`,
-    [email],
-  );
-  const row = rows[0];
-  return row?.password_hash ? { user: toPublicUser(row), passwordHash: row.password_hash } : null;
-}
-
-/**
- * 소셜 계정으로 가입하거나, 이미 가입했으면 그 사용자를 돌려준다.
- * 닉네임은 처음 가입할 때만 저장한다 (나중에 서비스 안에서 바꾼 이름을 카카오 이름으로 덮어쓰지 않도록).
- */
 export async function upsertSocialUser(
   pool: pg.Pool,
   input: { provider: Exclude<Provider, 'local'>; providerId: string; nickname: string },
@@ -63,7 +31,7 @@ export async function upsertSocialUser(
      VALUES ($1, $2, $3)
      ON CONFLICT (provider, provider_id) WHERE provider_id IS NOT NULL
        DO UPDATE SET updated_at = now()
-     RETURNING id, email, nickname, provider, password_hash`,
+     RETURNING id, email, nickname, provider`,
     [input.provider, input.providerId, input.nickname],
   );
   return toPublicUser(rows[0]!);
@@ -71,7 +39,7 @@ export async function upsertSocialUser(
 
 export async function findUserById(pool: pg.Pool, id: string): Promise<PublicUser | null> {
   const { rows } = await pool.query<UserRow>(
-    'SELECT id, email, nickname, provider, password_hash FROM users WHERE id = $1',
+    'SELECT id, email, nickname, provider FROM users WHERE id = $1',
     [id],
   );
   return rows[0] ? toPublicUser(rows[0]) : null;

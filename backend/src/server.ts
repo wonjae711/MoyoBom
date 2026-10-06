@@ -1,7 +1,6 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { createApp } from './app.js';
-import { LoginRateLimiter } from './auth/rateLimit.js';
 import { AuthService } from './auth/service.js';
 import { loadEnv } from './config/env.js';
 import { createPool, pingDb } from './db/pool.js';
@@ -83,7 +82,7 @@ const links = new LinkService({
 const app = createApp({
   checkDb: () => pingDb(pool),
   articles: { listFeed: (query) => listFeed(pool, query), listSources: () => listSources(pool) },
-  auth: { auth: authService, loginLimiter: new LoginRateLimiter(), jwtSecret: env.JWT_SECRET, cookies },
+  auth: { auth: authService, jwtSecret: env.JWT_SECRET, cookies },
   oauth: {
     auth: authService,
     cookies,

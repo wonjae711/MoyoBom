@@ -20,6 +20,8 @@
 
 > ver.1.9 변경 (2026-10-05, F-04): ARTICLES에 검색용 GIN(pg_trgm) 인덱스(title || ' ' || description)와 INDEX(source) 추가 — 둘 다 api_collected만
 
+> ver.1.12 변경 (2026-10-06, F-07): 이메일 가입·로그인 제거 — USERS.password_hash 삭제, UNIQUE(lower(email)) WHERE local 삭제, CHECK는 "소셜이면 provider_id 필수"로 단순화. provider='local'은 예전 이메일 계정 행(로그인 불가)으로만 남는다
+
 > ver.1.11 변경 (2026-10-05, F-09·C-08 구현): DIGEST_SUBSCRIPTIONS를 categories·keywords(text[])·send_hour(한국 시간 0~23시)·active로 바꾸고, 알림함 DIGESTS 추가(구독·받는 시각 UNIQUE로 중복 생성 방지, 상태 pending·ok·empty·failed, 포함 기사는 복사해 jsonb로 저장, read_at, 30일 보관, CHECK(scheduled면 slot 필수·manual이면 null)). 구독 삭제 시 받은 알림은 남김(subscription_id null)
 
 > ver.1.10 변경 (2026-10-05, F-10): BOARD_CONNECTIONS 구현 — CHECK(from_item_id < to_item_id)로 카드 쌍을 정렬해 저장(A→B·B→A 같은 연결), version(만든 때의 보드 변경 순번) 추가, 카드·보드 삭제 시 함께 삭제, INDEX(board_id)·INDEX(to_item_id)
@@ -48,7 +50,6 @@ USERS ||--o{ REFRESH_TOKENS : "has"
 USERS {
 bigint id PK
 string email "nullable, local 가입자는 UNIQUE"
-string password_hash "nullable, local 가입자만"
 string provider "local | kakao | naver"
 string provider_id "소셜 계정 고유 ID, local은 null"
 string nickname
@@ -199,9 +200,8 @@ timestamptz created_at
 
 | 테이블 | 제약 조건 내용 | 목적 |
 |---|---|---|
-| USERS | UNIQUE(lower(email)) WHERE provider = 'local' | 이메일 중복 가입 방지, 대소문자 무시 (F-07). 카카오는 이메일 제공이 선택 동의라 소셜 계정은 email이 null일 수 있음 |
 | USERS | UNIQUE(provider, provider_id) | 동일 소셜 계정 중복 가입 방지 (F-07) |
-| USERS | CHECK(local이면 email·password_hash 필수 / 소셜이면 provider_id 필수·password_hash 없음) | 가입 방식별 필수값 보장 (F-07) |
+| USERS | CHECK(provider = 'local' OR provider_id IS NOT NULL) | 소셜 계정은 소셜 계정 ID 필수 (F-07). 'local'은 2026-10-06에 없앤 이메일 가입의 예전 행 (ver.1.12) |
 | ARTICLES | UNIQUE(original_link) | 동일 기사 중복 수집 방지 (F-01) |
 | ARTICLES | INDEX(category, published_at) | 카테고리별 피드·필터 조회 성능 (F-02, F-04) |
 | ARTICLES | INDEX(published_at) | 전체 최신순 피드 조회 성능 (F-02) |

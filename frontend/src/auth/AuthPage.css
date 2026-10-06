@@ -1,4 +1,4 @@
-/* 로그인·회원가입 (F-07) — 보라 테마 프로토타입 */
+/* 로그인 (F-07, 소셜 로그인만) — 보라 테마 프로토타입 */
 
 .auth {
   min-height: 100vh;
@@ -8,13 +8,6 @@
 .auth--login {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-}
-
-.auth--signup {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
 }
 
 .auth__left {
@@ -62,53 +55,10 @@
   letter-spacing: -0.02em;
 }
 
-.auth--signup .auth__heading h1 {
-  font-size: 26px;
-}
-
 .auth__heading p {
   margin: 0;
   color: var(--fg-text-2);
   font-size: 15.5px;
-}
-
-.auth__form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.auth__submit {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.auth__submit-btn {
-  height: 46px;
-  font-size: 15px;
-}
-
-.auth__recent-note {
-  font-size: 12.5px;
-  color: var(--fg-text-2);
-  text-align: center;
-}
-
-.auth__divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--fg-muted);
-  font-size: 13px;
-}
-
-.auth__divider::before,
-.auth__divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--bg-border);
 }
 
 .auth__social-list {
@@ -176,18 +126,6 @@
 
 .auth__recent--naver {
   color: #027a38;
-}
-
-.auth__switch {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--fg-text-2);
-}
-
-.auth__switch a {
-  font-weight: 600;
 }
 
 /* ---------- 오른쪽 보드 그림 ---------- */
@@ -278,4 +216,11 @@
   .auth__art {
     display: none;
   }
+}
+
+.auth__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+  text-align: center;
 }

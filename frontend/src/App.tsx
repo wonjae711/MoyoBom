@@ -14,8 +14,9 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/login" element={<AuthPage mode="login" />} />
-          <Route path="/signup" element={<AuthPage mode="signup" />} />
+          <Route path="/login" element={<AuthPage />} />
+          {/* 이메일 가입은 없앴다 (2026-10-06) — 예전 주소로 오면 로그인 화면으로 */}
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route
             path="/"
             element={

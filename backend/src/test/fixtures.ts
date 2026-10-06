@@ -5,11 +5,11 @@ export async function resetDb(pool: pg.Pool): Promise<void> {
   await pool.query('TRUNCATE users, articles, ai_usage RESTART IDENTITY CASCADE');
 }
 
-/** 테스트용 이메일 가입 사용자. id를 돌려준다 */
+/** 테스트용 사용자 (카카오 가입). id를 돌려준다 */
 export async function createUser(pool: pg.Pool, nickname: string): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO users (email, password_hash, provider, nickname) VALUES ($1, 'scrypt$x', 'local', $2) RETURNING id`,
-    [`${nickname}-${Math.random().toString(36).slice(2)}@example.com`, nickname],
+    `INSERT INTO users (provider, provider_id, nickname) VALUES ('kakao', $1, $2) RETURNING id`,
+    [Math.random().toString(36).slice(2), nickname],
   );
   return rows[0]!.id;
 }

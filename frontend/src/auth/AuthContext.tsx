@@ -9,7 +9,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 로그인된 방식을 기억해 다음에 로그인 화면에 "최근 사용"으로 보여 준다 (소셜 로그인은 돌아온 뒤 /me로 확인)
   useEffect(() => {
-    if (user) setRecentLogin(user.provider)
+    if (user && user.provider !== 'local') setRecentLogin(user.provider)
   }, [user])
 
   useEffect(() => {
@@ -24,28 +24,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onUnauthorized(() => setUser(null))
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { user } = await apiFetch<{ user: User }>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    })
-    setUser(user)
-  }, [])
-
-  const signup = useCallback(async (input: { email: string; password: string; nickname: string }) => {
-    const { user } = await apiFetch<{ user: User }>('/api/auth/signup', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    })
-    setUser(user)
-  }, [])
-
   // 서버에서 로그아웃이 끝난 뒤에만 화면을 로그아웃 상태로 바꾼다. 실패하면 에러를 던진다 (L-04)
   const logout = useCallback(async () => {
     await logoutSession()
     setUser(null)
   }, [])
 
-  const value = useMemo(() => ({ user, loading, login, signup, logout }), [user, loading, login, signup, logout])
+  const value = useMemo(() => ({ user, loading, logout }), [user, loading, logout])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

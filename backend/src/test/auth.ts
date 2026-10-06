@@ -1,5 +1,4 @@
 import { ACCESS_COOKIE } from '../auth/http.js';
-import { LoginRateLimiter } from '../auth/rateLimit.js';
 import type { AuthRouteDeps } from '../routes/auth.js';
 import type { OAuthRouteDeps } from '../routes/oauth.js';
 import type { BoardRouteDeps } from '../routes/boards.js';
@@ -18,13 +17,10 @@ export async function authCookie(userId = '1', now?: Date): Promise<string> {
 export function fakeAuthDeps(): AuthRouteDeps {
   return {
     auth: {
-      signup: async () => null,
-      login: async () => null,
       refresh: async () => null,
       logout: async () => {},
-      getUser: async (id) => ({ id, email: 'user@example.com', nickname: '테스터', provider: 'local' }),
+      getUser: async (id) => ({ id, email: null, nickname: '테스터', provider: 'kakao' }),
     },
-    loginLimiter: new LoginRateLimiter(),
     jwtSecret: TEST_JWT_SECRET,
     cookies: { secure: false },
   };

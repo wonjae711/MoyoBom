@@ -76,10 +76,8 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body.error ?? `요청 실패 (HTTP ${res.status})`, body.fields)
 }
 
-/** 401이어도 토큰 갱신을 시도하지 않는 경로 (갱신 자체·로그인 시도·로그아웃 — 재귀 갱신 방지) */
-const NO_REFRESH_PATHS = ['/api/auth/refresh', '/api/auth/login', '/api/auth/signup', '/api/auth/logout']
-/** 401이 "로그인 정보가 틀림"을 뜻하는 경로 — 로그아웃 상태로 알리지 않고 서버 메시지를 그대로 전달 */
-const CREDENTIAL_PATHS = ['/api/auth/login', '/api/auth/signup']
+/** 401이어도 토큰 갱신을 시도하지 않는 경로 (갱신 자체·로그아웃 — 재귀 갱신 방지) */
+const NO_REFRESH_PATHS = ['/api/auth/refresh', '/api/auth/logout']
 
 const matches = (path: string, list: string[]) => list.some((p) => path === p || path.startsWith(`${p}?`))
 
@@ -99,7 +97,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (res.status === 401 && !matches(path, NO_REFRESH_PATHS)) {
     if (await refreshSession()) res = await request()
   }
-  if (res.status === 401 && !matches(path, CREDENTIAL_PATHS)) {
+  if (res.status === 401) {
     unauthorizedListeners.forEach((listener) => listener())
     throw new UnauthorizedError()
   }

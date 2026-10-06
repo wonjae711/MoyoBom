@@ -4,6 +4,7 @@ export interface User {
   id: string
   email: string | null
   nickname: string
+  /** 'local'은 2026-10-06에 없앤 이메일 가입의 예전 계정 */
   provider: 'local' | 'kakao' | 'naver'
 }
 
@@ -11,8 +12,6 @@ export interface AuthContextValue {
   user: User | null
   /** 처음 로그인 상태를 확인하는 중 */
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  signup: (input: { email: string; password: string; nickname: string }) => Promise<void>
   logout: () => Promise<void>
 }
 

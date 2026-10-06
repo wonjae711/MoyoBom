@@ -1,5 +1,5 @@
 import { parseCookie } from 'cookie';
-import type { CookieOptions, Request, RequestHandler, Response } from 'express';
+import type { CookieOptions, RequestHandler, Response } from 'express';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, verifyAccessToken } from './tokens.js';
 import type { AuthTokens } from './service.js';
 
@@ -76,8 +76,4 @@ export function checkOrigin(appOrigin: string): RequestHandler {
     }
     res.status(403).json({ error: '허용되지 않은 출처의 요청입니다' });
   };
-}
-
-export function clientKey(req: Request, email: string): string {
-  return `${req.ip ?? 'unknown'}:${email.toLowerCase()}`;
 }

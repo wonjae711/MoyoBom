@@ -57,15 +57,6 @@ describe('apiFetch', () => {
     off()
   })
 
-  it('로그인 실패(401)는 갱신을 시도하지 않고 서버 메시지를 그대로 전달한다', async () => {
-    const fn = mockFetch(() => json({ error: '이메일 또는 비밀번호가 올바르지 않습니다' }, 401))
-    const error = await apiFetch('/api/auth/login', { method: 'POST', body: '{}' }).catch((e: unknown) => e)
-
-    expect(error).toBeInstanceOf(ApiError)
-    expect((error as ApiError).message).toBe('이메일 또는 비밀번호가 올바르지 않습니다')
-    expect(fn).toHaveBeenCalledTimes(1)
-  })
-
   it('[C-09] access가 만료된 채 페이지를 다시 열어도 /api/auth/me는 갱신 후 다시 요청해 로그인을 유지한다', async () => {
     let meCalls = 0
     const fn = mockFetch((url) => {
@@ -104,10 +95,10 @@ describe('apiFetch', () => {
   })
 
   it('400 응답의 잘못된 필드 목록을 전달한다', async () => {
-    mockFetch(() => json({ error: '입력값을 확인해 주세요', fields: ['email'] }, 400))
-    const error = (await apiFetch('/api/auth/signup', { method: 'POST', body: '{}' }).catch((e: unknown) => e)) as ApiError
+    mockFetch(() => json({ error: '입력값을 확인해 주세요', fields: ['title'] }, 400))
+    const error = (await apiFetch('/api/boards', { method: 'POST', body: '{}' }).catch((e: unknown) => e)) as ApiError
     expect(error.status).toBe(400)
-    expect(error.fields).toEqual(['email'])
+    expect(error.fields).toEqual(['title'])
   })
 })
 

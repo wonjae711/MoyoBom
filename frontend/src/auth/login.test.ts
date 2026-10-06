@@ -22,8 +22,11 @@ describe('[결정 A] 최근 로그인 방식', () => {
     expect(getRecentLogin()).toBeNull()
     setRecentLogin('naver')
     expect(getRecentLogin()).toBe('naver')
-    setRecentLogin('local')
-    expect(getRecentLogin()).toBe('local')
+    setRecentLogin('kakao')
+    expect(getRecentLogin()).toBe('kakao')
+    // 없앤 이메일 로그인 값은 무시 (2026-10-06)
+    window.localStorage.setItem('moyobom:last-login', 'local')
+    expect(getRecentLogin()).toBeNull()
   })
 
   it('저장된 값이 이상하거나 저장소를 쓸 수 없어도 화면이 깨지지 않는다', () => {

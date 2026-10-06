@@ -1,5 +1,4 @@
 import type pg from 'pg';
-import { getDummyHash, hashPassword, verifyPassword } from './password.js';
 import {
   REFRESH_TOKEN_TTL_SECONDS,
   createRefreshToken,
@@ -8,9 +7,7 @@ import {
 } from './tokens.js';
 import {
   consumeRefreshToken,
-  createLocalUser,
   deleteRefreshToken,
-  findLocalUserByEmail,
   findUserById,
   saveRefreshToken,
   upsertSocialUser,
@@ -39,25 +36,6 @@ export class AuthService {
 
   constructor(private readonly deps: AuthServiceDeps) {
     this.now = deps.now ?? (() => new Date());
-  }
-
-  /** 이메일이 이미 쓰이고 있으면 null */
-  async signup(input: { email: string; password: string; nickname: string }): Promise<AuthResult | null> {
-    const user = await createLocalUser(this.deps.pool, {
-      email: input.email,
-      passwordHash: await hashPassword(input.password),
-      nickname: input.nickname,
-    });
-    return user ? { user, tokens: await this.issueTokens(user.id) } : null;
-  }
-
-  /** 이메일이 없거나 비밀번호가 틀리면 null (어느 쪽인지 구분해서 알려주지 않는다) */
-  async login(email: string, password: string): Promise<AuthResult | null> {
-    const found = await findLocalUserByEmail(this.deps.pool, email);
-    // 없는 이메일이어도 비밀번호 검증과 같은 시간을 써서 가입 여부가 응답 시간으로 드러나지 않게 한다
-    const valid = await verifyPassword(password, found?.passwordHash ?? (await getDummyHash()));
-    if (!found || !valid) return null;
-    return { user: found.user, tokens: await this.issueTokens(found.user.id) };
   }
 
   /** refresh token을 새 토큰 쌍으로 바꾼다(회전). 무효하거나 만료됐으면 null */
