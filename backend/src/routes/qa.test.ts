@@ -30,8 +30,8 @@ describe.skipIf(!testDatabaseUrl)('[F-12] 보드 기반 질의응답 (DB)', () =
   let outsider: { id: string; cookie: string };
   let boardId: string;
 
-  function makeApp(limits = { user: 30, ip: 60, total: 300 }) {
-    const qa = new QaService({ pool, boards, embedder: { embed }, answerer: { answer }, quota: new AiQuota(pool, limits), minSimilarity: 0.5 });
+  function makeApp(limits = { user: 30, ip: 60, total: 300 }, maxArticles?: number) {
+    const qa = new QaService({ pool, boards, embedder: { embed }, answerer: { answer }, quota: new AiQuota(pool, limits), minSimilarity: 0.5, maxArticles });
     app = createApp({
       checkDb: async () => true,
       articles: { listFeed: async () => ({ articles: [], nextCursor: null, collectedCursor: null }) },
@@ -86,6 +86,21 @@ describe.skipIf(!testDatabaseUrl)('[F-12] 보드 기반 질의응답 (DB)', () =
     expect(question).toBe('반도체 규제는 어떻게 되고 있어?');
     expect(given.map((s) => s.title).sort()).toEqual(['반도체 수출 규제', '반도체 장비 통제']);
     expect(given[0]!.text).toBe('요약');
+  });
+
+  it('[Codex 324f857] 검색은 근거 설명을 읽은 최근 카드 범위 안에서만 하고, 근거 설명이 비지 않는다', async () => {
+    makeApp(undefined, 2);
+    const old = await card('반도체 오래된 기사');
+    // 범위 밖 카드의 기사는 예전에 임베딩이 저장돼 있어도 출처로 잡히면 안 된다
+    await pool.query(`UPDATE articles SET embedding = $2::vector WHERE id = (SELECT article_id FROM board_items WHERE id = $1)`, [
+      old,
+      `[${topicVector('반도체 오래된 기사').join(',')}]`,
+    ]);
+    const recent = [await card('반도체 새 기사 1'), await card('반도체 새 기사 2')];
+    const res = await ask('반도체 소식은?');
+    expect(res.body.sources.map((s: { itemId: string }) => s.itemId).sort()).toEqual([...recent].sort());
+    const [, given] = answer.mock.calls[0]!;
+    expect(given.every((s) => s.text === '요약')).toBe(true);
   });
 
   it('[예외] 관련 기사가 없으면 AI 답변 없이 "찾을 수 없다"고 안내한다', async () => {

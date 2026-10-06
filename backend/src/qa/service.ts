@@ -46,6 +46,8 @@ export interface QaServiceDeps {
   quota: AiQuota;
   /** 이 유사도 미만인 기사는 근거로 쓰지 않는다 */
   minSimilarity: number;
+  /** 검색 대상 카드 수 (기본 MAX_QA_ARTICLES, 테스트에서 줄인다) */
+  maxArticles?: number;
 }
 
 /**
@@ -62,7 +64,7 @@ export class QaService {
 
   async ask(boardId: string, userId: string, ip: string, question: string): Promise<QaResult> {
     if (!(await this.deps.boards.getRole(boardId, userId))) throw new BoardError('not_found', '보드를 찾을 수 없습니다');
-    const cards = await loadBoardArticles(this.deps.pool, boardId, MAX_QA_ARTICLES);
+    const cards = await loadBoardArticles(this.deps.pool, boardId, this.deps.maxArticles ?? MAX_QA_ARTICLES);
     if (cards.length === 0) throw new BoardError('invalid', '보드에 기사 카드가 있어야 질문할 수 있습니다');
 
     const quota = await this.deps.quota.consume(QA_FEATURE, userId, ip);
@@ -70,16 +72,22 @@ export class QaService {
     try {
       await ensureArticleEmbeddings(this.deps.pool, this.deps.embedder, cards);
       const [vector] = await this.deps.embedder.embed([question]);
-      const sources = await this.search(boardId, vector!);
+      // 검색 범위 = 임베딩을 맞춘 최근 카드 집합 (Codex 324f857 리뷰: 범위 밖 오래된 기사가 근거 없이 출처로 잡히던 문제)
+      const sources = await this.search(boardId, vector!, cards.map((c) => c.itemId));
       if (sources.length === 0) {
         return { found: false, answer: NOT_FOUND_ANSWER, sources: [], citations: [], remaining: quota.remaining };
       }
-      const descriptions = new Map(cards.map((c) => [c.articleId, c.description]));
       const { answer, citations } = await this.deps.answerer.answer(
         question,
-        sources.map((s) => ({ n: s.n, title: s.title, source: s.source, text: descriptions.get(s.articleId) ?? '' })),
+        sources.map((s) => ({ n: s.n, title: s.title, source: s.source, text: s.description })),
       );
-      return { found: true, answer, sources, citations, remaining: quota.remaining };
+      return {
+        found: true,
+        answer,
+        sources: sources.map(({ description: _description, ...card }) => card),
+        citations,
+        remaining: quota.remaining,
+      };
     } catch (error) {
       // AI 쪽 실패로 답을 못 냈으면 사용 횟수를 돌려준다
       if (error instanceof EmbeddingError || error instanceof AnswerError) {
@@ -89,32 +97,37 @@ export class QaService {
     }
   }
 
-  /** 보드의 기사 카드 중 질문과 가까운 순으로 QA_TOP_K개 (pgvector 코사인 거리). 같은 기사가 두 번 올라가 있으면 한 번만 */
-  private async search(boardId: string, vector: number[]): Promise<QaSourceCard[]> {
+  /**
+   * 주어진 카드(최근 MAX_QA_ARTICLES개) 중 질문과 가까운 순으로 QA_TOP_K개 (pgvector 코사인 거리).
+   * 같은 기사가 두 번 올라가 있으면 한 번만. 답변 근거로 쓸 설명도 함께 읽는다
+   */
+  private async search(boardId: string, vector: number[], itemIds: string[]): Promise<(QaSourceCard & { description: string })[]> {
     const { rows } = await this.deps.pool.query<{
       item_id: string;
       article_id: string;
       title: string;
+      description: string;
       source: string;
       original_link: string;
       similarity: number;
     }>(
       `SELECT * FROM (
-         SELECT DISTINCT ON (a.id) bi.id AS item_id, a.id AS article_id, a.title, a.source, a.original_link,
+         SELECT DISTINCT ON (a.id) bi.id AS item_id, a.id AS article_id, a.title, a.description, a.source, a.original_link,
            1 - (a.embedding <=> $2::vector) AS similarity
          FROM board_items bi JOIN articles a ON a.id = bi.article_id
-         WHERE bi.board_id = $1 AND bi.item_type = 'article' AND a.embedding IS NOT NULL
+         WHERE bi.board_id = $1 AND bi.id = ANY($5::bigint[]) AND bi.item_type = 'article' AND a.embedding IS NOT NULL
          ORDER BY a.id, bi.id
        ) found
        WHERE similarity >= $3
        ORDER BY similarity DESC LIMIT $4`,
-      [boardId, `[${vector.join(',')}]`, this.deps.minSimilarity, QA_TOP_K],
+      [boardId, `[${vector.join(',')}]`, this.deps.minSimilarity, QA_TOP_K, itemIds],
     );
     return rows.map((r, i) => ({
       n: i + 1,
       itemId: r.item_id,
       articleId: r.article_id,
       title: r.title,
+      description: r.description ?? '',
       source: r.source,
       originalLink: r.original_link,
       similarity: Math.round(r.similarity * 1000) / 1000,
