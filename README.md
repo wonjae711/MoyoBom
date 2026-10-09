@@ -27,6 +27,10 @@ TEST_DATABASE_URL=postgres://moyobom:moyobom@localhost:5433/moyobom_test
 NEWS_COLLECTOR_ENABLED=true   # (선택) false면 뉴스 자동 수집 끔
 JWT_SECRET=                   # 32자 이상 임의 문자열 (로그인 토큰 서명)
 APP_ORIGIN=http://localhost:5173
+KAKAO_REST_API_KEY=           # 카카오 로그인 (Redirect URI: {APP_ORIGIN}/api/auth/kakao/callback)
+KAKAO_CLIENT_SECRET=          # (선택) 카카오 콘솔에서 켰을 때만
+NAVER_LOGIN_CLIENT_ID=        # 네이버 로그인 (Callback: {APP_ORIGIN}/api/auth/naver/callback)
+NAVER_LOGIN_CLIENT_SECRET=
 ```
 
 ```bash
