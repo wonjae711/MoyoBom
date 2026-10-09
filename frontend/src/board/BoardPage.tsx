@@ -763,8 +763,6 @@ export function BoardPage() {
                   busy={aiBusy}
                   locked={locked}
                   remaining={clusterRemaining}
-                  boardId={boardId}
-                  onAddArticle={(article) => addArticle(article)}
                 />
               )}
               {right.kind === 'ask' && <AskPanel boardId={boardId} onShowCard={showCard} hasArticles={articles.length > 0} />}

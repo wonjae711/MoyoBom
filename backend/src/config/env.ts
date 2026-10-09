@@ -51,12 +51,6 @@ const envSchema = z.object({
   AI_QA_LIMIT_USER: z.coerce.number().int().min(0).default(30),
   AI_QA_LIMIT_IP: z.coerce.number().int().min(0).default(60),
   AI_QA_LIMIT_TOTAL: z.coerce.number().int().min(0).default(300),
-  /** 반대 관점 추천 (F-13): 같은 이슈로 볼 최소 유사도, 하루 한도 */
-  // 2026-10-09 실기사 확인: 같은 이슈는 0.5 이상, 낱말만 겹친 다른 이슈는 0.38~0.40
-  PERSPECTIVE_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.45),
-  AI_PERSPECTIVE_LIMIT_USER: z.coerce.number().int().min(0).default(20),
-  AI_PERSPECTIVE_LIMIT_IP: z.coerce.number().int().min(0).default(40),
-  AI_PERSPECTIVE_LIMIT_TOTAL: z.coerce.number().int().min(0).default(200),
   /** 뉴스 다이제스트 (F-09): 예약 실행 서비스 전체 하루 한도, "지금 받아보기" 하루 한도 */
   AI_DIGEST_LIMIT_TOTAL: z.coerce.number().int().min(0).default(300),
   AI_DIGEST_NOW_LIMIT_USER: z.coerce.number().int().min(0).default(5),

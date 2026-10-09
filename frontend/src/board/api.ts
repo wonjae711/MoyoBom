@@ -1,5 +1,4 @@
 import { apiFetch } from '../api/client'
-import type { FeedArticle } from '../feed/types'
 import type { BoardCluster, BoardItem, BoardSnapshot, BoardSummary } from './types'
 
 // 백엔드 backend/src/routes/boards.ts (F-05·F-06·F-07 초대)
@@ -136,34 +135,6 @@ export function askBoard(boardId: string, question: string): Promise<AskResult> 
 
 export function askQuota(boardId: string): Promise<number> {
   return apiFetch<{ remaining: number }>(`/api/boards/${boardId}/ask/quota`).then((r) => r.remaining)
-}
-
-/** 반대 관점 추천 (F-13): different = AI가 확신한 "다른 시각", other_source = 같은 이슈의 다른 언론사 기사 */
-export interface PerspectiveItem {
-  kind: 'different' | 'other_source'
-  /** different일 때 보드 기사와 무엇이 다른지 */
-  reason: string
-  similarity: number
-  article: FeedArticle
-}
-
-export interface PerspectiveResult {
-  /** none = 같은 이슈의 다른 언론사 기사를 찾지 못함 (사용 횟수 차감 없음) */
-  status: 'ok' | 'none'
-  /** 보드 기사들이 이 이슈를 다루는 방식 (AI 한 문장) */
-  boardView: string
-  /** AI 비교에 성공했는지 (실패하면 모두 다른 언론사로만) */
-  judged: boolean
-  items: PerspectiveItem[]
-  remaining: number
-}
-
-export function findPerspectives(boardId: string, clusterId: string): Promise<PerspectiveResult> {
-  return apiFetch<PerspectiveResult>(`/api/boards/${boardId}/clusters/${clusterId}/perspectives`, { method: 'POST' })
-}
-
-export function perspectiveQuota(boardId: string): Promise<number> {
-  return apiFetch<{ remaining: number }>(`/api/boards/${boardId}/perspectives/quota`).then((r) => r.remaining)
 }
 
 export const inviteUrl = (token: string) => `${window.location.origin}/invite/${token}`

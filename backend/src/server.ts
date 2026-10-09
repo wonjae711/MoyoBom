@@ -15,8 +15,6 @@ import { createOpenAiClusterSummarizer, createOpenAiSummarizer } from './ai/summ
 import { createOpenAiEmbedder } from './ai/embedder.js';
 import { createOpenAiAnswerer } from './ai/answerer.js';
 import { QaService } from './qa/service.js';
-import { PerspectiveService } from './perspectives/service.js';
-import { createOpenAiPerspectiveJudge } from './ai/perspectiveJudge.js';
 import { createOpenAiDigestWriter } from './ai/digestWriter.js';
 import { DigestService, MAX_SUBSCRIPTIONS, type DigestNotifier } from './digests/service.js';
 import { startDigestSchedule } from './digests/schedule.js';
@@ -56,18 +54,6 @@ const qa = new QaService({
   answerer: createOpenAiAnswerer({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
   quota: new AiQuota(pool, { user: env.AI_QA_LIMIT_USER, ip: env.AI_QA_LIMIT_IP, total: env.AI_QA_LIMIT_TOTAL }),
   minSimilarity: env.QA_MIN_SIMILARITY,
-});
-const perspectives = new PerspectiveService({
-  pool,
-  boards,
-  embedder,
-  judge: createOpenAiPerspectiveJudge({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_SUMMARY_MODEL }),
-  quota: new AiQuota(pool, {
-    user: env.AI_PERSPECTIVE_LIMIT_USER,
-    ip: env.AI_PERSPECTIVE_LIMIT_IP,
-    total: env.AI_PERSPECTIVE_LIMIT_TOTAL,
-  }),
-  minSimilarity: env.PERSPECTIVE_MIN_SIMILARITY,
 });
 // 다이제스트 알림도 소켓 서버가 만들어진 뒤 채워진다
 const digestNotifier: DigestNotifier = { digestCreated: (...args) => userNotifier.digestCreated(...args) };
@@ -120,7 +106,7 @@ const app = createApp({
           }
         : null,
   },
-  boards: { boards, notifier, links, clusters, qa, perspectives },
+  boards: { boards, notifier, links, clusters, qa },
   digests: { digests },
   appOrigin: env.APP_ORIGIN,
 });

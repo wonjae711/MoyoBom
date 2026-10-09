@@ -9,7 +9,6 @@ import { EmbeddingError } from '../ai/embedder.js';
 import { ClusterBusyError, type ClusterService } from '../clusters/service.js';
 import { AnswerError } from '../ai/answerer.js';
 import type { QaService } from '../qa/service.js';
-import type { PerspectiveService } from '../perspectives/service.js';
 import type { BoardNotifier } from '../realtime/boardSync.js';
 
 const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요.').max(40, '보드 이름은 40자 이내로 입력해 주세요.') });
@@ -26,8 +25,6 @@ export interface BoardRouteDeps {
   clusters?: ClusterService;
   /** 보드 질의응답(F-12). 없으면 해당 API는 503 */
   qa?: QaService;
-  /** 반대 관점 추천(F-13). 없으면 해당 API는 503 */
-  perspectives?: PerspectiveService;
 }
 
 const coord = z.number().finite().min(-1_000_000).max(1_000_000);
@@ -67,7 +64,7 @@ function badTitle(res: Response, error: z.ZodError): void {
 }
 
 /** /api/boards — 보드 목록·생성·조회·수정·삭제(F-05·F-06), 초대 링크·멤버 관리(F-07). 모두 로그인 필요 */
-export function createBoardsRouter({ boards, notifier, links, clusters, qa, perspectives }: BoardRouteDeps): Router {
+export function createBoardsRouter({ boards, notifier, links, clusters, qa }: BoardRouteDeps): Router {
   const router = Router();
 
   router.param('boardId', (_req, res, next, value: string) => {
@@ -236,28 +233,6 @@ export function createBoardsRouter({ boards, notifier, links, clusters, qa, pers
       if (error instanceof EmbeddingError || error instanceof AnswerError) {
         console.error('[qa] AI 호출 실패:', error.message);
         return void res.status(502).json({ error: 'AI 답변에 실패했습니다. 잠시 후 다시 시도해 주세요', code: 'ai_failed' });
-      }
-      sendError(res, error);
-    }
-  });
-
-  // ---------- 반대 관점 추천 (F-13) — 보드 멤버 누구나, 결과는 묻는 사람에게만 ----------
-
-  router.get('/:boardId/perspectives/quota', async (_req, res) => {
-    if (!perspectives) return void res.status(503).json({ error: '다른 시각 찾기를 사용할 수 없습니다' });
-    res.json({ remaining: await perspectives.remaining(res.locals.userId!) });
-  });
-
-  /** AI 정리로 묶인 이슈 하나에 대해 같은 이슈의 다른 언론사 기사와 "다른 시각" 기사를 찾는다 */
-  router.post('/:boardId/clusters/:clusterId/perspectives', async (req, res) => {
-    if (!perspectives) return void res.status(503).json({ error: '다른 시각 찾기를 사용할 수 없습니다' });
-    try {
-      res.json(await perspectives.find(req.params.boardId, req.params.clusterId, res.locals.userId!, req.ip ?? 'unknown'));
-    } catch (error) {
-      if (error instanceof QuotaError) return void res.status(429).json({ error: error.message, code: 'quota', scope: error.scope });
-      if (error instanceof EmbeddingError) {
-        console.error('[perspectives] 임베딩 실패:', error.message);
-        return void res.status(502).json({ error: '다른 시각을 찾지 못했어요. 잠시 후 다시 시도해 주세요', code: 'ai_failed' });
       }
       sendError(res, error);
     }

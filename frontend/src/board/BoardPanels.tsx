@@ -1,11 +1,9 @@
 import { formatDateTime } from '../feed/merge'
-import type { FeedArticle } from '../feed/types'
 import { Icon, Spinner } from '../ui/Icon'
 import type { BoardCluster } from './types'
 import type { ViewItem } from './useBoardSync'
 import { Thumb } from '../ui/Thumb'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
-import { Perspectives } from './Perspectives'
 
 /** 오른쪽 패널 틀: 제목 + 닫기, 본문은 children */
 export function SidePanel({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -113,8 +111,6 @@ export function AiPanel({
   busy,
   locked,
   remaining,
-  boardId,
-  onAddArticle,
 }: {
   state: AiState
   clusters: BoardCluster[]
@@ -131,9 +127,6 @@ export function AiPanel({
   busy: boolean
   locked: boolean
   remaining: number | null
-  boardId: string
-  /** 다른 시각 찾기(F-13)에서 고른 기사를 보드에 추가 */
-  onAddArticle: (article: FeedArticle) => void
 }) {
   const byId = new Map(articles.map((a) => [a.id, a]))
   const grouped = new Set(clusters.flatMap((c) => c.itemIds))
@@ -233,13 +226,6 @@ export function AiPanel({
                   {c.summary && <span className="ai__group-sum">{c.summary}</span>}
                   <span className="ai__group-items">{members.map(line)}</span>
                 </button>
-                <Perspectives
-                  boardId={boardId}
-                  clusterId={c.id}
-                  hasArticles={members.some((m) => m!.type === 'article')}
-                  onAdd={onAddArticle}
-                  locked={locked}
-                />
               </li>
             )
           })}

@@ -47,14 +47,6 @@ export async function loadBoardArticles(pool: pg.Pool, boardId: string, limit: n
   }));
 }
 
-/** 임베딩을 만들 수 있는 기사 (보드 카드든 수집 기사든 — F-13 후보 기사도 같은 방식으로 저장·재사용) */
-export interface EmbeddableArticle {
-  articleId: string;
-  title: string;
-  description: string;
-  embedding: number[] | null;
-}
-
 /** 임베딩할 글: 제목 + 요약 */
 export const articleText = (a: { title: string; description: string }) => `${a.title}\n${a.description}`;
 
@@ -63,7 +55,7 @@ export const articleText = (a: { title: string; description: string }) => `${a.t
  * 한 번에 못 만들면 기사별로 다시 시도하고, 그래도 실패한 기사는 뺀다 (F-08 예외 처리).
  * 하나도 만들지 못하고 원래 있던 것도 없으면 EmbeddingError
  */
-export async function ensureArticleEmbeddings<T extends EmbeddableArticle>(pool: pg.Pool, embedder: Embedder, cards: T[]): Promise<T[]> {
+export async function ensureArticleEmbeddings<T extends BoardArticle>(pool: pg.Pool, embedder: Embedder, cards: T[]): Promise<T[]> {
   const missing = [...new Map(cards.filter((c) => !c.embedding).map((c) => [c.articleId, c])).values()];
   const created = new Map<string, number[]>();
   if (missing.length > 0) {
