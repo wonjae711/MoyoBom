@@ -51,7 +51,7 @@ USERS ||--o{ REFRESH_TOKENS : "has"
 
 USERS {
 bigint id PK
-string email "nullable, local 가입자는 UNIQUE"
+string email "nullable (소셜은 제공 동의 시에만)"
 string provider "local | kakao | naver"
 string provider_id "소셜 계정 고유 ID, local은 null"
 string nickname
@@ -69,7 +69,7 @@ string original_link "UNIQUE"
 string source_type "api_collected | user_submitted"
 bigint submitted_by FK "nullable, user_submitted일 때 제출자"
 timestamptz published_at "user_submitted는 확인 불가 시 null"
-vector embedding "vector(1536), text-embedding-3-small, 보드에 처음 추가될 때 생성, 그 전엔 null"
+vector embedding "vector(1536), text-embedding-3-small, 처음 AI 분석·질문 때 생성, 그 전엔 null"
 timestamptz created_at
 string image_url "대표 사진 주소(og:image, https), 없으면 null"
 timestamptz image_checked_at "사진 주소 찾기 시도 시각"
@@ -230,7 +230,7 @@ timestamptz created_at
 
 ### 3. 설계의 핵심 포인트
 
-- **pgvector로 관계형+벡터 데이터 통합:** ARTICLES.embedding 컬럼에 임베딩 벡터를 그대로 저장해, 별도 벡터 DB 없이 PostgreSQL 하나로 기사 메타데이터와 AI 클러스터링용 벡터를 함께 관리. 1인 개발 규모에서 관리 포인트를 최소화. F-08 클러스터링은 보드 단위(수십 개)라 서버 메모리에서 계산하고, 벡터 인덱스(HNSW)는 전체 기사 대상 검색이 필요한 F-04 시맨틱 검색·F-12 RAG 착수 시 추가.
+- **pgvector로 관계형+벡터 데이터 통합:** ARTICLES.embedding 컬럼에 임베딩 벡터를 그대로 저장해, 별도 벡터 DB 없이 PostgreSQL 하나로 기사 메타데이터와 AI 클러스터링용 벡터를 함께 관리. 1인 개발 규모에서 관리 포인트를 최소화. F-08 클러스터링은 보드 단위(수십 개)라 서버 메모리에서 계산하고, 벡터 인덱스(HNSW)는 전체 기사 대상 검색이 필요해질 때 추가 — F-12 질의응답은 보드의 최근 카드 200개 안에서만 찾으므로 인덱스 없이 구현(2026-10-05), F-04 검색은 낱말 검색(pg_trgm)으로 구현.
 - **BOARD_ITEMS의 다형적 설계:** 기사·메모·사진 세 가지 카드 타입을 하나의 테이블에서 item_type으로 구분. article_id는 article 타입일 때만 채워지는 nullable FK로 처리해, 화이트보드 위 모든 객체(핀)를 하나의 테이블로 일관되게 관리.
 - **최종 상태와 이벤트 로그의 분리:** 실시간 동기화되는 현재 상태는 BOARD_ITEMS에, 변경 이력은 별도 BOARD_EVENTS에 기록. 이렇게 분리해야 "지금 보드가 어떻게 생겼는가"와 "누가 언제 무엇을 바꿨는가"를 독립적으로 조회할 수 있고, 추후 되돌리기(undo)·타임라인 재생 기능 확장이 쉬움.
 - **AI 클러스터링과 수동 조정의 느슨한 결합:** 클러스터 결과는 CLUSTERS/CLUSTER_ITEMS로 별도 저장하고, 사용자가 카드를 수동으로 옮겨도 BOARD_ITEMS의 좌표만 바뀔 뿐 클러스터 소속 정보는 그대로 유지. AI 제안과 사용자 조정이 서로 충돌하지 않는 구조.
