@@ -1,21 +1,15 @@
-import {
-  BrowserRouter,
-  Navigate,
-  Route,
-  Routes,
-  useLocation,
-} from "react-router";
-import { AuthProvider } from "./auth/AuthContext";
-import { AuthPage } from "./auth/AuthPage";
-import { RequireAuth } from "./auth/RequireAuth";
-import { BoardListPage } from "./board/BoardListPage";
-import { BoardPage } from "./board/BoardPage";
-import { InvitePage } from "./board/InvitePage";
-import { DigestPage } from "./digests/DigestPage";
-import { NewsFeed } from "./feed/NewsFeed";
-import { AppHeader } from "./ui/AppHeader";
-import { ErrorBoundary } from "./ui/ErrorBoundary";
-import { PageError } from "./ui/PageError";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
+import { AuthProvider } from './auth/AuthContext'
+import { AuthPage } from './auth/AuthPage'
+import { RequireAuth } from './auth/RequireAuth'
+import { BoardListPage } from './board/BoardListPage'
+import { BoardPage } from './board/BoardPage'
+import { InvitePage } from './board/InvitePage'
+import { DigestPage } from './digests/DigestPage'
+import { NewsFeed } from './feed/NewsFeed'
+import { AppHeader } from './ui/AppHeader'
+import { ErrorBoundary } from './ui/ErrorBoundary'
+import { PageError } from './ui/PageError'
 
 function App() {
   return (
@@ -78,19 +72,16 @@ function App() {
         </PageBoundary>
       </AuthProvider>
     </BrowserRouter>
-  );
+  )
 }
 
 function PageBoundary({ children }: { children: React.ReactNode }) {
-  const { pathname } = useLocation();
+  const { pathname } = useLocation()
   return (
-    <ErrorBoundary
-      resetKey={pathname}
-      fallback={(retry) => <PageError onRetry={retry} />}
-    >
+    <ErrorBoundary resetKey={pathname} fallback={(retry) => <PageError onRetry={retry} />}>
       {children}
     </ErrorBoundary>
-  );
+  )
 }
 
-export default App;
+export default App
