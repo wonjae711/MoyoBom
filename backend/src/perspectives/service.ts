@@ -74,6 +74,11 @@ export function stripParticle(word: string): string {
  * 형태소 분석 없이 조사만 떼는 단순한 방식 (F-13 "최소한의 프로토타입")
  */
 export function extractKeywords(titles: string[], max = MAX_KEYWORDS): string[] {
+  return weighKeywords(titles, max).map((k) => k.word);
+}
+
+/** 검색 낱말과 가중치(그 낱말이 나온 이슈 기사 제목 수) — 이슈 전체에 걸친 낱말이 겹칠수록 후보 순위가 높다 */
+export function weighKeywords(titles: string[], max = MAX_KEYWORDS): { word: string; weight: number }[] {
   const df = new Map<string, number>();
   for (const title of titles) {
     const words = new Set(
@@ -88,7 +93,7 @@ export function extractKeywords(titles: string[], max = MAX_KEYWORDS): string[] 
   return [...df.entries()]
     .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length || a[0].localeCompare(b[0]))
     .slice(0, max)
-    .map(([w]) => w);
+    .map(([word, weight]) => ({ word, weight }));
 }
 
 const escapeLike = (text: string) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -232,17 +237,17 @@ export class PerspectiveService {
 
   /**
    * 최근 CANDIDATE_DAYS일 수집 기사 중 이슈 낱말이 들어간 다른 언론사 기사 (보드에 이미 있는 기사·같은 언론사 제외).
-   * 낱말이 많이 겹칠수록 앞에 (pg_trgm 인덱스와 같은 식으로 ILIKE)
+   * 겹친 낱말의 가중치 합이 클수록 앞에 (pg_trgm 인덱스와 같은 식으로 ILIKE). 하나만 겹쳐도 후보로 두고 같은 이슈인지는 임베딩 유사도로 거른다
+   * — 이름 하나로 불리는 이슈("부캉이")는 낱말 두 개 이상이 겹치는 기사가 거의 없다 (2026-10-09 실기사 확인)
    */
   private async searchCandidates(boardId: string, issue: { title: string; source: string }[]): Promise<CandidateRow[]> {
-    const keywords = extractKeywords(issue.map((a) => a.title));
+    const keywords = weighKeywords(issue.map((a) => a.title));
     if (keywords.length === 0) return [];
-    const patterns = keywords.map((k) => `%${escapeLike(k)}%`);
-    const minHits = keywords.length >= 3 ? 2 : 1;
+    const patterns = keywords.map((k) => `%${escapeLike(k.word)}%`);
     const { rows } = await this.deps.pool.query<CandidateRow>(
       `SELECT id, title, description, source, category, original_link, published_at, created_at, image_url, embedding::text AS embedding
        FROM (
-         SELECT a.*, (SELECT count(*) FROM unnest($3::text[]) p WHERE (a.title || ' ' || a.description) ILIKE p ESCAPE '\\') AS hits
+         SELECT a.*, (SELECT sum(w) FROM unnest($3::text[], $6::int[]) AS k(p, w) WHERE (a.title || ' ' || a.description) ILIKE p ESCAPE '\\') AS hits
          FROM articles a
          WHERE a.source_type = 'api_collected'
            AND a.created_at > now() - make_interval(days => $4)
@@ -250,10 +255,9 @@ export class PerspectiveService {
            AND NOT (a.source = ANY ($2::text[]))
            AND NOT EXISTS (SELECT 1 FROM board_items bi WHERE bi.board_id = $1 AND bi.article_id = a.id)
        ) c
-       WHERE hits >= $5
        ORDER BY hits DESC, published_at DESC
-       LIMIT $6`,
-      [boardId, [...new Set(issue.map((a) => a.source))], patterns, CANDIDATE_DAYS, minHits, MAX_CANDIDATES],
+       LIMIT $5`,
+      [boardId, [...new Set(issue.map((a) => a.source))], patterns, CANDIDATE_DAYS, MAX_CANDIDATES, keywords.map((k) => k.weight)],
     );
     return rows;
   }

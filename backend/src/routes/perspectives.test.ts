@@ -118,6 +118,14 @@ describe.skipIf(!testDatabaseUrl)('[F-13] 반대 관점 기사 추천 (DB)', () 
     expect(candidatesGiven).toHaveLength(3);
   });
 
+  it('이름 하나로 불리는 이슈는 그 낱말 하나만 겹쳐도 후보로 찾는다', async () => {
+    const clusterId = await issue([await card('부캉이 건강 우려 커져'), await card('부캉이 보러 북항 방문객 몰려')]);
+    await collected('소주병에 등장한 부캉이', '경향신문');
+    const res = await find(clusterId);
+    expect(res.body.status).toBe('ok');
+    expect((res.body.items as Item[]).map((i) => i.article.title)).toEqual(['소주병에 등장한 부캉이']);
+  });
+
   it('보드에 이미 올린 기사는 후보에서 뺀다', async () => {
     const clusterId = await issue([await card('반도체 수출 규제 강화'), await card('반도체 수출 규제 영향')]);
     const onBoard = await collected('반도체 수출 규제 반발', '조선일보');
