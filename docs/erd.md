@@ -1,6 +1,6 @@
 # 모여봄 — ERD / 테이블 설계
 
-> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-05, ver.1.10)
+> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-09, ver.1.13)
 >
 > ver.1.1 변경: 소셜 로그인(카카오·네이버) 컬럼 추가, ARTICLES.category 추가, 임베딩 차원 확정(1536), BOARD_CONNECTIONS 중복 방지 제약 추가
 >
@@ -20,13 +20,13 @@
 
 > ver.1.9 변경 (2026-10-05, F-04): ARTICLES에 검색용 GIN(pg_trgm) 인덱스(title || ' ' || description)와 INDEX(source) 추가 — 둘 다 api_collected만
 
-> ver.1.13 변경 (2026-10-06, 기사 사진): ARTICLES.image_url(대표 사진 주소 — 언론사가 밝힌 og:image, https만, 사진 파일은 저장하지 않음)·image_checked_at(주소 찾기를 시도한 시각, 못 찾아도 기록해 다시 가져오지 않음) 추가, INDEX(created_at DESC) WHERE image_checked_at IS NULL AND api_collected
-
-> ver.1.12 변경 (2026-10-06, F-07): 이메일 가입·로그인 제거 — USERS.password_hash 삭제, UNIQUE(lower(email)) WHERE local 삭제, CHECK는 "소셜이면 provider_id 필수"로 단순화. provider='local'은 예전 이메일 계정 행(로그인 불가)으로만 남는다
+> ver.1.10 변경 (2026-10-05, F-10): BOARD_CONNECTIONS 구현 — CHECK(from_item_id < to_item_id)로 카드 쌍을 정렬해 저장(A→B·B→A 같은 연결), version(만든 때의 보드 변경 순번) 추가, 카드·보드 삭제 시 함께 삭제, INDEX(board_id)·INDEX(to_item_id)
 
 > ver.1.11 변경 (2026-10-05, F-09·C-08 구현): DIGEST_SUBSCRIPTIONS를 categories·keywords(text[])·send_hour(한국 시간 0~23시)·active로 바꾸고, 알림함 DIGESTS 추가(구독·받는 시각 UNIQUE로 중복 생성 방지, 상태 pending·ok·empty·failed, 포함 기사는 복사해 jsonb로 저장, read_at, 30일 보관, CHECK(scheduled면 slot 필수·manual이면 null)). 구독 삭제 시 받은 알림은 남김(subscription_id null)
 
-> ver.1.10 변경 (2026-10-05, F-10): BOARD_CONNECTIONS 구현 — CHECK(from_item_id < to_item_id)로 카드 쌍을 정렬해 저장(A→B·B→A 같은 연결), version(만든 때의 보드 변경 순번) 추가, 카드·보드 삭제 시 함께 삭제, INDEX(board_id)·INDEX(to_item_id)
+> ver.1.12 변경 (2026-10-06, F-07): 이메일 가입·로그인 제거 — USERS.password_hash 삭제, UNIQUE(lower(email)) WHERE local 삭제, CHECK는 "소셜이면 provider_id 필수"로 단순화. provider='local'은 예전 이메일 계정 행(로그인 불가)으로만 남는다
+
+> ver.1.13 변경 (2026-10-06, 기사 사진): ARTICLES.image_url(대표 사진 주소 — 언론사가 밝힌 og:image, https만, 사진 파일은 저장하지 않음)·image_checked_at(주소 찾기를 시도한 시각, 못 찾아도 기록해 다시 가져오지 않음) 추가, INDEX(created_at DESC) WHERE image_checked_at IS NULL AND api_collected
 
 ### 1. 시각화 다이어그램 (Mermaid)
 
