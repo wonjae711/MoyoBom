@@ -211,6 +211,7 @@ timestamptz created_at
 | ARTICLES | INDEX(published_at) | 전체 최신순 피드 조회 성능 (F-02) |
 | ARTICLES | INDEX(created_at, id) WHERE source_type = 'api_collected' | 재연결 시 수집 순서로 누락분 조회 (F-02, ver.1.5) |
 | ARTICLES | GIN((title \|\| ' ' \|\| description) gin_trgm_ops), INDEX(source) — api_collected만 | 기사 검색(앞뒤가 열린 ILIKE)·언론사 필터 (F-04, ver.1.9) |
+| ARTICLES | INDEX(created_at DESC) WHERE image_checked_at IS NULL AND source_type = 'api_collected' | 아직 대표 사진 주소를 찾지 않은 최근 기사 조회 (기사 사진, ver.1.13) |
 | ARTICLES | CHECK(api_collected면 category·published_at 필수) | API 수집 기사의 필수값 보장. null 허용은 user_submitted만 |
 | REFRESH_TOKENS | UNIQUE(token_hash) | refresh token 조회·폐기 (F-07) |
 | REFRESH_TOKENS | INDEX(user_id), FK ON DELETE CASCADE | 사용자별 토큰 조회, 탈퇴 시 토큰 함께 삭제 |
@@ -220,7 +221,7 @@ timestamptz created_at
 | BOARD_ITEMS | INDEX(board_id) | 보드 접속 시 카드 목록 빠른 조회 (F-05) |
 | BOARD_ITEMS | CHECK(article→article_id, memo→content, photo→image_key 필수) | 카드 종류별 필수값 보장 (F-05) |
 | BOARD_ITEMS | INDEX(article_id) WHERE article_id IS NOT NULL | 30일 정리 작업에서 "보드에 올라간 기사" 확인 (F-01) |
-| BOARDS | CHECK(제목 1~50자) | 보드 이름 길이 제한 (F-06) |
+| BOARDS | CHECK(제목 1~50자) | 보드 이름 길이 제한 (F-06). 화면·API 검증은 40자(2026-10-06 사용자 결정) |
 | BOARD_EVENTS | INDEX(board_id, created_at) | 변경 이력(히스토리) 타임라인 조회 성능. 되돌리기(undo)는 F-05에서 범위 제외 |
 | BOARD_CONNECTIONS | UNIQUE(from_item_id, to_item_id), CHECK(from_item_id < to_item_id) | 같은 카드 쌍 중복 연결 방지 (F-10). 저장 시 작은 id를 from으로 정렬해 A→B / B→A 중복도 방지 (ver.1.10 구현) |
 | CLUSTER_ITEMS | UNIQUE(board_item_id) | 카드 하나는 동시에 하나의 클러스터에만 속함 |
@@ -234,4 +235,4 @@ timestamptz created_at
 - **BOARD_ITEMS의 다형적 설계:** 기사·메모·사진 세 가지 카드 타입을 하나의 테이블에서 item_type으로 구분. article_id는 article 타입일 때만 채워지는 nullable FK로 처리해, 화이트보드 위 모든 객체(핀)를 하나의 테이블로 일관되게 관리.
 - **최종 상태와 이벤트 로그의 분리:** 실시간 동기화되는 현재 상태는 BOARD_ITEMS에, 변경 이력은 별도 BOARD_EVENTS에 기록. 이렇게 분리해야 "지금 보드가 어떻게 생겼는가"와 "누가 언제 무엇을 바꿨는가"를 독립적으로 조회할 수 있고, 추후 되돌리기(undo)·타임라인 재생 기능 확장이 쉬움.
 - **AI 클러스터링과 수동 조정의 느슨한 결합:** 클러스터 결과는 CLUSTERS/CLUSTER_ITEMS로 별도 저장하고, 사용자가 카드를 수동으로 옮겨도 BOARD_ITEMS의 좌표만 바뀔 뿐 클러스터 소속 정보는 그대로 유지. AI 제안과 사용자 조정이 서로 충돌하지 않는 구조.
-- **저작권 고려:** ARTICLES는 본문 전체가 아닌 title/description(요약)+original_link만 저장하는 스키마로 설계, 데이터 모델 단계에서부터 저작권 리스크를 관리.
+- **저작권 고려:** ARTICLES는 본문 전체가 아닌 title/description(요약)+original_link만 저장하는 스키마로 설계, 데이터 모델 단계에서부터 저작권 리스크를 관리. 기사 대표 사진도 파일은 저장하지 않고 언론사가 공개한 주소만 저장(ver.1.13).
