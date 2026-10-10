@@ -105,8 +105,6 @@ type Gesture =
  * - 피드 기사를 끌어다 놓으면 그 자리에 기사 카드 추가
  * - 선택한 카드 위에 카드 메뉴(자세히·수정·삭제), 삭제는 카드 안에서 한 번 더 확인 (B8)
  */
-/** 코르크 배경 한 장 크기(보드 좌표) */
-const CORK_TILE = 240
 export function BoardCanvas(props: Props) {
   const { items, view, onViewChange, onSize, tool, locked, connectMode } = props
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -253,8 +251,7 @@ export function BoardCanvas(props: Props) {
 
   const positioned = items.map((item) => (dragPos?.id === item.id ? { ...item, x: dragPos.x, y: dragPos.y } : item))
   const byId = new Map(positioned.map((i) => [i.id, i]))
-  // 코르크 질감 한 장의 크기 — 확대·이동에 맞춰 같이 움직인다
-  const tile = Math.max(40, CORK_TILE * view.scale)
+  const grid = Math.max(8, 24 * view.scale)
   const cursor = panning ? 'grabbing' : tool === 'pan' ? 'grab' : 'default'
 
   return (
@@ -262,7 +259,7 @@ export function BoardCanvas(props: Props) {
       ref={viewportRef}
       className="canvas"
       style={{
-        backgroundSize: `${tile}px ${tile}px`,
+        backgroundSize: `${grid}px ${grid}px`,
         backgroundPosition: `${view.x}px ${view.y}px`,
         cursor,
       }}
