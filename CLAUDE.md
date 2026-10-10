@@ -46,7 +46,7 @@
 - AI 이슈 묶기(F-08): `backend/src/clusters/`(algorithm — 평균 연결 군집화, service — 임베딩 생성·재사용·요약·한도·보드별 동시 실행 막기) + `ai/embedder.ts`. 클러스터 DB 작업(교체·제안 무시·자동 정렬·원래대로)은 BoardService에 있고 모두 bump()로 순번을 올린다. 화면은 `BoardCanvas`의 ClusterCard·ClusterLinks, 동기화는 `board:clusters`(순번 비교)
 - DB 테스트 공통 도우미 `src/test/fixtures.ts`(resetDb·createUser·createArticle). 새 테이블이 articles/users를 참조하면 TRUNCATE에 CASCADE 필요
 - 백엔드 테스트는 파일을 순차 실행(`vitest.config.ts` fileParallelism: false — DB 테스트끼리 같은 테이블을 TRUNCATE하기 때문)
-- 서버 배포: `docker-compose.prod.yml`(db·migrate·backend·web) — web은 `frontend/Dockerfile`로 화면을 빌드해 Caddy(`frontend/Caddyfile`)에 넣고 HTTPS 자동 발급·`/api`·`/socket.io` 전달, migrate는 `backend/Dockerfile`의 build 단계로 시작 때마다 마이그레이션. 백엔드는 `TRUST_PROXY=uniquelocal`(Caddy 컨테이너의 X-Forwarded-For를 믿음, 개발 기본은 loopback). 절차는 `docs/deploy.md`
+- 서버 배포: `docker-compose.prod.yml`(db·migrate·backend·web) — web은 `frontend/Dockerfile`로 화면을 빌드해 Caddy(`frontend/Caddyfile`)에 넣고 HTTPS 자동 발급·`/api`·`/socket.io` 전달, migrate는 `backend/Dockerfile`의 build 단계로 시작 때마다 마이그레이션. 백엔드는 `TRUST_PROXY=uniquelocal`(Caddy 컨테이너의 X-Forwarded-For를 믿음, 개발 기본은 loopback). 절차는 `docs/deploy.md`. **CD**: main push → CI 통과 → `deploy` job이 OIDC로 AWS 역할을 받아 SSM으로 서버에서 `git merge --ff-only <커밋>` + `scripts/deploy.sh` 실행(빌드·교체·이미지 정리·HTTPS health 확인)
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
 
 ## 개발 우선순위 (진행 순서)
@@ -93,7 +93,6 @@
 ## 미결정 사항 (작업 전 사용자에게 확인)
 
 - 주차별 실제 날짜(캘린더)
-- 서버 배포 마무리 — 서버는 https://43-201-119-144.sslip.io 에서 실행 중(2026-10-10). 사용자가 카카오·네이버 콘솔에 서버 주소·콜백 등록(`docs/deploy.md` 5단계) 후 실계정 로그인 확인 필요
 
 ## 진행 상황
 
@@ -130,6 +129,7 @@
 - 2026-10-09: Notion 일괄 동기화(사용자 요청) — Codex가 Notion에서 직접 고친 정정(요구사항 F-08 처리 로직 1·6, 기획/설계서 4.1·4.3·데이터 흐름 5·배포 비고)을 먼저 저장소 md에 옮긴 뒤, 요구사항 명세서·ERD(ver.1.13)·기획/설계서 원본 페이지와 저장소 md 사본(CLAUDE.md·README.md 본문, 첨부 5개)을 갱신하고 LLM 간 상호작용 문서에 세션 정리 회신. "문서 동기화" 절 문구는 사용자 요청으로 원래대로 유지
 - 2026-10-10: 배포 준비 — 백엔드·웹 Dockerfile, Caddy 설정(HTTPS 자동 발급·SPA·캐시), `docker-compose.prod.yml`(마이그레이션 자동 적용, DB·백엔드 포트 비공개), `TRUST_PROXY` 환경 변수, `docs/deploy.md`. 로컬에서 운영 구성 그대로 실행해 확인(health·SPA 라우트·HTTP→HTTPS·카카오 리다이렉트 주소·Secure 쿠키·Socket.io·캐시 헤더). 테스트 백엔드 300. 다음: 사용자 EC2 준비 후 서버 첫 실행
 - 2026-10-10: **EC2 첫 배포** — t3.small·20GB·Elastic IP 43.201.119.144, 주소 `https://43-201-119-144.sslip.io`(Let's Encrypt 인증서 자동 발급 확인). 서버 준비(Docker·스왑 2GB·디스크 확장)·읽기 전용 배포 키·서버 .env(DB 비밀번호·JWT 키는 서버에서 새로 생성)까지 Claude가 SSH로 진행. health·HTTP→HTTPS·SPA 라우트·카카오 리다이렉트 주소 확인, 뉴스 자동 수집 동작(첫 수집 2,131건). 아웃바운드 규칙이 지워져 있어 설치가 막혔던 일 → deploy.md에 기록
+- 2026-10-10: 사용자가 서버에서 카카오·네이버 실계정 로그인·초대 링크(시크릿 탭)·실시간 동기화 확인. **CD 구축**(사용자 선택 A: SSM) — IAM 역할 2개(EC2용 SSM 기본 권한 / GitHub main 브랜치 전용 배포 역할: 이 인스턴스에 RunShellScript만)·OIDC 공급자는 사용자가 직접 실행, GitHub Secrets 2개, `ci.yml` deploy job, `scripts/deploy.sh`
 
 ## 코딩 컨벤션
 

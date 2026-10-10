@@ -98,11 +98,36 @@ curl https://<DOMAIN>/api/health                           # {"status":"ok","db"
 브라우저에서 `https://<DOMAIN>`으로 들어가 카카오·네이버 로그인을 확인한다.
 서버 DB는 비어 있는 상태로 시작한다 — 기사는 자동 수집으로 채워지고, 계정·보드는 새로 만든다.
 
+## 자동 배포 (CD)
+
+main에 push → CI(backend·frontend 검사) 통과 → `deploy` job이 서버에 배포한다 (`.github/workflows/ci.yml`).
+
+```
+GitHub Actions ──OIDC 임시 자격 증명──▶ AWS SSM ──▶ 서버의 SSM 에이전트
+                                                    git merge --ff-only <검사한 커밋> → scripts/deploy.sh
+```
+
+- SSH 포트를 GitHub에 열지 않고, 오래 쓰는 AWS 키도 GitHub에 저장하지 않는다.
+- `scripts/deploy.sh`: 새 이미지 빌드·교체 → 오래된 이미지 정리 → HTTPS health 확인(실패하면 job 실패 + 로그 출력). 손으로 돌릴 때도 같은 스크립트(`sudo bash scripts/deploy.sh`).
+- 배포 한 번에 3~5분. 빌드 중에는 기존 컨테이너가 계속 돌고 교체 순간에만 몇 초 끊긴다. **발표 직전·도중에는 main에 push하지 않는다.**
+- 서버 저장소에 손으로 바꾼 파일이 있으면 `--ff-only`가 실패해 배포가 멈춘다(덮어쓰지 않음).
+
+설정 (2026-10-10, 한 번만):
+
+| 곳 | 값 |
+|---|---|
+| IAM 역할 `moyobom-ec2-ssm` | `AmazonSSMManagedInstanceCore`만 — EC2 인스턴스 프로필로 연결 |
+| IAM OIDC 공급자 | `token.actions.githubusercontent.com` (대상 `sts.amazonaws.com`) |
+| IAM 역할 `moyobom-github-deploy` | 신뢰: `repo:wonjae711/MoyoBom:ref:refs/heads/main`만 / 권한: 이 인스턴스에 `AWS-RunShellScript` SendCommand + GetCommandInvocation만 |
+| GitHub Secrets | `AWS_DEPLOY_ROLE_ARN`(위 역할 ARN), `EC2_INSTANCE_ID` |
+
+인스턴스를 새로 만들면 `moyobom-github-deploy` 권한의 인스턴스 ARN과 `EC2_INSTANCE_ID`를 바꿔야 한다.
+
 ## 운영
 
 ```bash
-# 새 버전 반영
-git pull && docker compose -f docker-compose.prod.yml up -d --build
+# 새 버전 반영 (보통은 CD가 자동으로 함)
+git pull && sudo bash scripts/deploy.sh
 
 # 로그
 docker compose -f docker-compose.prod.yml logs -f backend
