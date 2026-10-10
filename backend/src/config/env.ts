@@ -33,6 +33,10 @@ const envSchema = z.object({
   NAVER_LOGIN_CLIENT_ID: optionalString,
   NAVER_LOGIN_CLIENT_SECRET: optionalString,
 
+  /** 사진 카드(F-05) S3 비공개 버킷 (선택). 없으면 사진 카드를 쓸 수 없다. 자격 증명은 SDK 기본 순서(서버: EC2 인스턴스 역할) */
+  PHOTO_BUCKET: optionalString,
+  AWS_REGION: z.string().min(1).default('ap-northeast-2'),
+
   NAVER_CLIENT_ID: z.string().min(1),
   NAVER_CLIENT_SECRET: z.string().min(1),
   GUARDIAN_API_KEY: z.string().min(1),

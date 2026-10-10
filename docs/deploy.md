@@ -71,6 +71,8 @@ DOMAIN=13-125-1-2.sslip.io
 POSTGRES_PASSWORD=
 # 로그인 토큰 서명 키 — 로컬과 다른 새 값. 예: openssl rand -base64 48
 JWT_SECRET=
+# 사진 카드 S3 버킷 (아래 "사진 카드 S3")
+PHOTO_BUCKET=moyobom-photos-774305579565
 ```
 
 `DATABASE_URL`·`APP_ORIGIN`·`PORT`·`NODE_ENV`·`TRUST_PROXY`는 `docker-compose.prod.yml`이 정하므로 `.env`에 있어도 무시된다. `TEST_DATABASE_URL`은 서버에서 쓰지 않는다.
@@ -122,6 +124,17 @@ GitHub Actions ──OIDC 임시 자격 증명──▶ AWS SSM ──▶ 서버
 | GitHub Secrets | `AWS_DEPLOY_ROLE_ARN`(위 역할 ARN), `EC2_INSTANCE_ID` |
 
 인스턴스를 새로 만들면 `moyobom-github-deploy` 권한의 인스턴스 ARN과 `EC2_INSTANCE_ID`를 바꿔야 한다.
+
+## 사진 카드 S3 (2026-10-10)
+
+| 곳 | 값 |
+|---|---|
+| S3 버킷 `moyobom-photos-774305579565` (서울) | 공개 접근 전부 차단. CORS: `https://43-201-119-144.sslip.io`·`http://localhost:5173`에서 POST만 |
+| IAM 역할 `moyobom-ec2-ssm` 인라인 정책 `photos-s3` | 이 버킷 `boards/*`만 Put·Get·Delete, ListBucket은 `boards/*` 접두어만 |
+| 서버 `.env` | `PHOTO_BUCKET=moyobom-photos-774305579565` (없으면 사진 카드 꺼짐) |
+
+백엔드는 키 없이 EC2 인스턴스 역할의 임시 자격 증명을 쓴다(컨테이너에서 메타데이터에 닿도록 IMDSv2 hop limit 2 — 현재 인스턴스는 기본값이 2). 서버 주소가 바뀌면 CORS의 주소도 바꾼다.
+로컬 개발에서는 `PHOTO_BUCKET`을 비워 두면 사진 카드가 꺼진다(테스트는 메모리 저장소).
 
 ## 운영
 

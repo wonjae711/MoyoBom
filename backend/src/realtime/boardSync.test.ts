@@ -11,6 +11,8 @@ import { createTestPool, testDatabaseUrl } from '../test/db.js';
 import { createArticle, createUser, resetDb } from '../test/fixtures.js';
 import { attachSocketAuth } from './auth.js';
 import { attachBoardSync, type AckResult, type BoardNotifier } from './boardSync.js';
+import { PhotoService } from '../photos/service.js';
+import { MemoryPhotoStorage } from '../test/photos.js';
 
 type Ok<T> = { ok: true } & T;
 
@@ -36,6 +38,7 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
   let ownerId: string;
   let friendId: string;
   let boardId: string;
+  let storage: MemoryPhotoStorage;
 
   async function client(userId: string): Promise<Socket> {
     const socket = connect(url, {
@@ -88,7 +91,8 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
     http = createServer();
     io = new Server(http);
     attachSocketAuth(io, { jwtSecret: TEST_JWT_SECRET, appOrigin: TEST_APP_ORIGIN });
-    notifier = attachBoardSync(io, boards);
+    storage = new MemoryPhotoStorage();
+    notifier = attachBoardSync(io, boards, new PhotoService({ pool, boards, storage }));
     await new Promise<void>((resolve) => http.listen(0, resolve));
     url = `http://localhost:${(http.address() as AddressInfo).port}`;
   });
@@ -295,5 +299,54 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
     await boards.deleteBoard(boardId, ownerId);
     await notifier.boardDeleted(boardId);
     expect(await deleted).toEqual({ boardId });
+  });
+
+  describe('사진 카드 (F-05)', () => {
+    const photoKey = () => `boards/${boardId}/0b6f1c5e-1f7a-4c1e-9a55-2f1d6c3b7a10.jpg`;
+
+    it('[수용 기준] 올린 사진으로 카드를 추가·설명 수정·이동·삭제할 수 있고, 삭제하면 S3 사진도 지운다', async () => {
+      const { owner, friend } = await joinedPair();
+      storage.put(photoKey(), { contentType: 'image/jpeg' });
+
+      const added = next<{ item: BoardItem }>(friend, 'card:added');
+      const res = await emit<{ item: BoardItem }>(owner, 'card:add', {
+        boardId, type: 'photo', imageKey: photoKey(), content: '  현장 사진  ', x: 10, y: 20,
+      });
+      expect(res).toMatchObject({ ok: true, item: { type: 'photo', imageKey: photoKey(), content: '현장 사진' } });
+      const itemId = (res as Ok<{ item: BoardItem }>).item.id;
+      expect((await added).item.id).toBe(itemId);
+
+      expect(await emit(friend, 'card:update', { boardId, itemId, content: '설명 바꿈' })).toMatchObject({
+        ok: true, item: { content: '설명 바꿈' },
+      });
+      expect(await emit(friend, 'card:move', { boardId, itemId, x: 50, y: 60 })).toMatchObject({ ok: true, item: { x: 50, y: 60 } });
+
+      expect(await emit(owner, 'card:delete', { boardId, itemId })).toMatchObject({ ok: true });
+      await new Promise((resolve) => setTimeout(resolve, 50)); // 삭제는 커밋 뒤 따로 진행
+      expect(storage.objects.has(photoKey())).toBe(false);
+    });
+
+    it('[예외] 올라가지 않은 사진·다른 보드의 사진·이미 카드로 만든 사진은 거절한다', async () => {
+      const { owner } = await joinedPair();
+      const add = (imageKey: string) => emit(owner, 'card:add', { boardId, type: 'photo', imageKey, x: 0, y: 0 });
+
+      expect(await add(photoKey())).toMatchObject({ ok: false, error: 'not_uploaded' });
+      const other = 'boards/999/0b6f1c5e-1f7a-4c1e-9a55-2f1d6c3b7a10.jpg';
+      storage.put(other, { contentType: 'image/jpeg' });
+      expect(await add(other)).toMatchObject({ ok: false, error: 'invalid' });
+
+      storage.put(photoKey(), { contentType: 'image/jpeg' });
+      expect(await add(photoKey())).toMatchObject({ ok: true });
+      expect(await add(photoKey())).toMatchObject({ ok: false, error: 'invalid' });
+    });
+
+    it('[예외] 멤버가 아니면 사진이 올라가 있어도 카드를 만들 수 없다', async () => {
+      const strangerId = await createUser(pool, '외부인');
+      const stranger = await client(strangerId);
+      storage.put(photoKey(), { contentType: 'image/jpeg' });
+      expect(await emit(stranger, 'card:add', { boardId, type: 'photo', imageKey: photoKey(), x: 0, y: 0 })).toMatchObject({
+        ok: false, error: 'not_found',
+      });
+    });
   });
 });

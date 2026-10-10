@@ -25,7 +25,7 @@
 - ✅ **F-01** 뉴스 수집 — 네이버(API HUB)·Guardian 실수집 확인
 - ✅ **F-02** 실시간 피드 — Socket.io 브로드캐스트, 피드 API, 피드 화면
 - ✅ **F-01** 미사용 기사 30일 정리 — 매일 새벽 4시(KST) 실행
-- 🚧 **F-05** 협업 보드 — 백엔드 완료(보드·기사/메모 카드 실시간 동기화, 드래그 중계, ack 롤백, 변경 기록, 재접속 스냅샷) / 보드 화면 구현(2026-10-04, 2026-10-06 보라 테마 화면으로 교체 — 두 사용자 동시 사용 사용자 확인) / 사진 카드(S3)는 AWS 이전 때
+- 🚧 **F-05** 협업 보드 — 백엔드 완료(보드·기사/메모 카드 실시간 동기화, 드래그 중계, ack 롤백, 변경 기록, 재접속 스냅샷) / 보드 화면 구현(2026-10-04, 2026-10-06 보라 테마 화면으로 교체 — 두 사용자 동시 사용 사용자 확인) / 사진 카드 구현(2026-10-10, S3 — 서버에서 사용자 확인 대기)
 - ✅ **F-03** 링크 AI 요약 카드 — 구현(2026-10-04): SSRF 방지 가져오기, 본문 추출, OpenAI 요약(프롬프트 인젝션 대비), 계정·IP·전체 하루 한도, 보드 화면 링크 입력. 실서버에서 실제 요약 확인(3~4초), 국내 언론사 12곳 중 11곳 본문 추출·1곳은 페이지 설명으로 대체 / 2026-10-08 화면 사용자 확인
 - ✅ **F-08** AI 이슈 클러스터링 — 구현(2026-10-04): 임베딩 생성·재사용, 평균 연결 군집화, 클러스터 AI 요약, 자동 정렬/원래대로/제안 무시, 하루 한도. 실서버에서 실제 기사 14개 카드 분석 확인(약 13초, 경제·야구·트럼프 외교 3개 이슈) 후 기준값 0.32로 조정 / C-05 정책 확정(2026-10-05), 2026-10-06 메모 카드도 함께 묶음, 2026-10-08 화면 사용자 확인
 - ✅ **F-04** 검색·필터 — 구현(2026-10-05, 2026-10-08 사용자 확인): 검색어(낱말 모두 포함)·카테고리·언론사·기간, 뉴스 탐색 화면과 보드 왼쪽 피드
@@ -223,6 +223,7 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 5. 드래그 중에는 card:moving 이벤트를 50–100ms 간격으로 스로틀링해 브로드캐스트만 하고 DB에는 저장하지 않는다. 드래그가 끝났을 때(card:move) 한 번만 board_items·board_events에 저장한다.
 6. 서버는 모든 변경 이벤트에 ack로 성공/실패를 응답하고, 실패 시 클라이언트는 Optimistic Update를 롤백한다.
 7. 사진 카드는 S3 비공개 버킷에 저장한다. 업로드·조회 모두 presigned URL을 사용하고, jpg/png/webp만 허용, 최대 10MB. 카드 삭제 시 S3 객체도 삭제한다.
+9. 사진 카드 구현 (2026-10-10): 사진은 `boards/{보드 id}/{uuid}.{jpg|png|webp}` key로 저장. ① `POST /api/boards/:id/photos` {contentType, size} → 멤버 확인 후 presigned POST(5분, `content-length-range` 1~10MB·Content-Type 조건을 S3가 검사) ② 브라우저가 S3로 바로 업로드 ③ `card:add` {type:'photo', imageKey, content?(설명)} — 서버가 key가 이 보드 모양인지, 실제로 올라갔고 조건에 맞는지(HeadObject) 확인, 이미 다른 카드에 쓰인 사진은 거절 ④ 보기 `GET /api/boards/:id/items/:itemId/photo` → 멤버 확인 후 5분짜리 presigned GET으로 302 ⑤ 카드 삭제·보드 삭제 뒤 S3 객체 삭제(실패해도 카드 삭제는 유지), 하루 넘게 카드가 없는 사진은 매일 04:30 정리. 사진 설명은 `card:update`로 수정(비워도 됨). 버킷 `PHOTO_BUCKET`이 없으면 사진 카드 API는 503
 8. 구현 (2026-10-04, 백엔드): 소켓 이벤트 — 보낼 때 `board:join`(ack로 스냅샷 — 서버는 멤버 확인 → room 참여 → 스냅샷 순서로 처리해 그 사이 변경을 놓치지 않음, C-11), `card:add`(clientId로 임시 카드와 짝지음)·`card:move`·`card:update`·`card:delete`(모두 ack {ok} / 실패 시 {ok:false, error}), `card:moving`(ack 없음, 중계만) / 받을 때 `card:added`·`card:moved`·`card:updated`·`card:deleted`·`card:moving`, REST 변경 알림 `board:renamed`·`board:deleted`·`board:removed`·`board:members-changed`. 옮긴 카드는 맨 위(z_index 최대)로 올라온다. **변경 순번(2026-10-04, L-02·L-05)**: 보드를 바꾸는 트랜잭션은 먼저 보드 변경 순번(`boards.seq`)을 올려 같은 보드의 변경을 한 줄로 세운다(순번 순서 = 커밋 순서). 카드는 `version`(마지막 변경 순번), 스냅샷은 `board.seq`, `card:deleted`는 `version`을 담는다. 클라이언트는 카드마다 아는 version보다 큰 변경만 적용하고, 삭제 순번 이하의 늦은 이벤트로 카드를 되살리지 않으며, join ack 전에 받은 이벤트는 스냅샷 seq보다 큰 것만 스냅샷 위에 적용한다. REST: `GET·POST /api/boards`, `GET·PATCH·DELETE /api/boards/:id`, 초대 `GET·POST /api/boards/:id/invite`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`, 멤버 `DELETE /api/boards/:id/members/:userId`
 
 **출력**: 모든 참여자에게 동기화된 보드 카드 상태

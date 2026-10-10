@@ -99,7 +99,9 @@ type Db = pg.Pool | pg.PoolClient;
 
 export type NewItemInput =
   | { type: 'article'; articleId: string; x: number; y: number }
-  | { type: 'memo'; content: string; x: number; y: number };
+  | { type: 'memo'; content: string; x: number; y: number }
+  /** 사진은 PhotoService.verifyUpload로 이 보드에 올라간 것을 확인한 key만 넘긴다. content는 설명 */
+  | { type: 'photo'; imageKey: string; content: string | null; x: number; y: number };
 
 /**
  * 보드·멤버·초대·카드 (F-05, F-06, F-07 초대).
@@ -394,16 +396,22 @@ export class BoardService {
         const hidden = article?.source_type === 'user_submitted' && !article.on_board && !options.allowSubmitted;
         if (!article || hidden) throw new BoardError('invalid', '없는 기사입니다');
       }
+      if (input.type === 'photo') {
+        // 한 사진은 한 카드만 — 두 카드가 같은 사진을 쓰면 한쪽을 지울 때 다른 쪽 사진도 사라진다
+        const { rowCount } = await client.query('SELECT 1 FROM board_items WHERE image_key = $1', [input.imageKey]);
+        if (rowCount) throw new BoardError('invalid', '이미 카드로 만든 사진입니다');
+      }
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO board_items (board_id, item_type, article_id, content, position_x, position_y, z_index, created_by, version)
-         VALUES ($1, $2, $3, $4, $5, $6,
-           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $7, $8)
+        `INSERT INTO board_items (board_id, item_type, article_id, content, image_key, position_x, position_y, z_index, created_by, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $8, $9)
          RETURNING id`,
         [
           boardId,
           input.type,
           input.type === 'article' ? input.articleId : null,
-          input.type === 'memo' ? input.content : null,
+          input.type === 'article' ? null : input.content,
+          input.type === 'photo' ? input.imageKey : null,
           input.x,
           input.y,
           userId,
@@ -443,6 +451,7 @@ export class BoardService {
     });
   }
 
+  /** 메모 내용 또는 사진 설명을 바꾼다 */
   async updateMemo(boardId: string, userId: string, itemId: string, content: string): Promise<BoardItem> {
     return this.tx(async (client) => {
       // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
@@ -450,7 +459,7 @@ export class BoardService {
       await this.requireRole(boardId, userId, 'member', client);
       const { rowCount } = await client.query(
         `UPDATE board_items SET content = $3, updated_at = now(), version = $4
-         WHERE board_id = $1 AND id = $2 AND item_type = 'memo'`,
+         WHERE board_id = $1 AND id = $2 AND item_type IN ('memo', 'photo')`,
         [boardId, itemId, content, seq],
       );
       if (!rowCount) throw new BoardError('not_found', '이미 삭제된 메모입니다');
@@ -459,19 +468,22 @@ export class BoardService {
     });
   }
 
-  /** 삭제도 순번을 받는다. 클라이언트는 이 순번 이하의 늦은 이벤트로 카드를 되살리지 않는다 */
-  async deleteItem(boardId: string, userId: string, itemId: string): Promise<{ version: number }> {
+  /**
+   * 삭제도 순번을 받는다. 클라이언트는 이 순번 이하의 늦은 이벤트로 카드를 되살리지 않는다.
+   * 사진 카드면 imageKey를 돌려준다 — 커밋 뒤 호출한 쪽이 S3 사진을 지운다
+   */
+  async deleteItem(boardId: string, userId: string, itemId: string): Promise<{ version: number; imageKey: string | null }> {
     return this.tx(async (client) => {
       // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
       await this.requireRole(boardId, userId, 'member', client);
-      const { rowCount } = await client.query('DELETE FROM board_items WHERE board_id = $1 AND id = $2', [
-        boardId,
-        itemId,
-      ]);
-      if (!rowCount) throw new BoardError('not_found', '이미 삭제된 카드입니다');
+      const { rows } = await client.query<{ image_key: string | null }>(
+        'DELETE FROM board_items WHERE board_id = $1 AND id = $2 RETURNING image_key',
+        [boardId, itemId],
+      );
+      if (!rows[0]) throw new BoardError('not_found', '이미 삭제된 카드입니다');
       await this.log(client, boardId, userId, 'card:delete', { itemId });
-      return { version: seq };
+      return { version: seq, imageKey: rows[0].image_key };
     });
   }
 

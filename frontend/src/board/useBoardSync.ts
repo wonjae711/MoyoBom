@@ -35,11 +35,13 @@ export interface ViewItem extends BoardItem {
   pending: boolean
   /** 다른 참여자가 지금 끌고 있으면 그 사람 id */
   movingBy?: string
+  /** 추가 중인 사진 카드의 내 브라우저 미리보기 주소 (서버 저장 전) */
+  preview?: string
 }
 
 interface Overlays {
   /** 추가 대기 중인 카드 (clientId → 임시 카드) */
-  adds: Map<string, BoardItem>
+  adds: Map<string, BoardItem & { preview?: string }>
   /** 이동 대기 중 (itemId → 위치와 요청 번호 — 같은 카드를 연달아 옮기면 마지막 요청만 반영) */
   moves: Map<string, { x: number; y: number; zIndex: number; req: number }>
   /** 메모 수정 대기 중 */
@@ -257,14 +259,17 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
 
   const addCard = useCallback(
     async (
-      input: { type: 'article'; article: FeedArticle } | { type: 'memo'; content: string },
+      input:
+        | { type: 'article'; article: FeedArticle }
+        | { type: 'memo'; content: string }
+        | { type: 'photo'; imageKey: string; content: string; preview: string },
       x: number,
       y: number,
       /** quiet: 실패 알림을 화면이 직접 띄운다 (다시 시도 버튼 등) */
       options: { quiet?: boolean } = {},
     ) => {
       const clientId = newClientId()
-      const temp: BoardItem = {
+      const temp: BoardItem & { preview?: string } = {
         id: `tmp-${clientId}`,
         type: input.type,
         articleId: input.type === 'article' ? input.article.id : null,
@@ -282,8 +287,9 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
                 imageUrl: input.article.imageUrl ?? null,
               }
             : null,
-        content: input.type === 'memo' ? input.content : null,
-        imageKey: null,
+        content: input.type === 'article' ? null : input.content || null,
+        imageKey: input.type === 'photo' ? input.imageKey : null,
+        ...(input.type === 'photo' ? { preview: input.preview } : {}),
         x,
         y,
         rotation: 0,
@@ -297,7 +303,9 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
       const payload =
         input.type === 'article'
           ? { type: 'article', articleId: input.article.id, x, y, clientId }
-          : { type: 'memo', content: input.content, x, y, clientId }
+          : input.type === 'memo'
+            ? { type: 'memo', content: input.content, x, y, clientId }
+            : { type: 'photo', imageKey: input.imageKey, content: input.content, x, y, clientId }
       const res = await send<{ item: BoardItem }>('card:add', payload)
       if (res.ok) settle(res.item)
       else if (!options.quiet) fail(res.message ?? '카드를 추가하지 못했습니다')

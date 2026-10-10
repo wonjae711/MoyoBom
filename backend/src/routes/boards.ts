@@ -9,6 +9,7 @@ import { EmbeddingError } from '../ai/embedder.js';
 import { ClusterBusyError, type ClusterService } from '../clusters/service.js';
 import { AnswerError } from '../ai/answerer.js';
 import type { QaService } from '../qa/service.js';
+import { PhotoError, VIEW_EXPIRES_SECONDS, type PhotoErrorCode, type PhotoService } from '../photos/service.js';
 import type { BoardNotifier } from '../realtime/boardSync.js';
 
 const titleSchema = z.object({ title: z.string().trim().min(1, '보드 이름을 입력해 주세요.').max(40, '보드 이름은 40자 이내로 입력해 주세요.') });
@@ -25,11 +26,16 @@ export interface BoardRouteDeps {
   clusters?: ClusterService;
   /** 보드 질의응답(F-12). 없으면 해당 API는 503 */
   qa?: QaService;
+  /** 사진 카드(F-05, S3). 없으면(버킷 미설정) 해당 API는 503 */
+  photos?: PhotoService;
 }
 
 const coord = z.number().finite().min(-1_000_000).max(1_000_000);
 const askSchema = z.object({ question: z.string().trim().min(2, '질문을 2자 이상 입력해 주세요').max(300, '질문은 300자 이내로 입력해 주세요') });
 const linkSchema = z.object({ url: z.string().trim().min(1).max(2000), x: coord.default(0), y: coord.default(0) });
+
+const photoUploadSchema = z.object({ contentType: z.string().max(100), size: z.number().int().positive() });
+const PHOTO_STATUS: Record<PhotoErrorCode, number> = { invalid_type: 400, too_large: 413, not_uploaded: 400 };
 
 const LINK_STATUS: Record<LinkErrorCode, number> = {
   invalid_url: 400,
@@ -64,7 +70,7 @@ function badTitle(res: Response, error: z.ZodError): void {
 }
 
 /** /api/boards — 보드 목록·생성·조회·수정·삭제(F-05·F-06), 초대 링크·멤버 관리(F-07). 모두 로그인 필요 */
-export function createBoardsRouter({ boards, notifier, links, clusters, qa }: BoardRouteDeps): Router {
+export function createBoardsRouter({ boards, notifier, links, clusters, qa, photos }: BoardRouteDeps): Router {
   const router = Router();
 
   router.param('boardId', (_req, res, next, value: string) => {
@@ -110,7 +116,35 @@ export function createBoardsRouter({ boards, notifier, links, clusters, qa }: Bo
     try {
       await boards.deleteBoard(req.params.boardId, res.locals.userId!);
       await notifier.boardDeleted(req.params.boardId);
+      void photos?.removeBoard(req.params.boardId);
       res.status(204).end();
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  /** 사진 업로드 허가증 (F-05): 브라우저가 이 url·fields로 S3에 바로 올린 뒤 key로 card:add(photo)를 보낸다 */
+  router.post('/:boardId/photos', async (req, res) => {
+    if (!photos) return void res.status(503).json({ error: '사진 카드를 사용할 수 없습니다', code: 'photos_disabled' });
+    const parsed = photoUploadSchema.safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ error: '요청 형식이 올바르지 않습니다', code: 'invalid' });
+    try {
+      res.json(await photos.createUpload(req.params.boardId, res.locals.userId!, parsed.data));
+    } catch (error) {
+      if (error instanceof PhotoError) return void res.status(PHOTO_STATUS[error.code]).json({ error: error.message, code: error.code });
+      sendError(res, error);
+    }
+  });
+
+  /** 사진 보기: 멤버 확인 후 잠깐 쓰는 S3 주소로 넘긴다 (<img src>로 바로 씀) */
+  router.get('/:boardId/items/:itemId/photo', async (req, res) => {
+    if (!photos) return void res.status(503).json({ error: '사진 카드를 사용할 수 없습니다', code: 'photos_disabled' });
+    if (!isId(req.params.itemId)) return void res.status(404).json({ error: '사진을 찾을 수 없습니다', code: 'not_found' });
+    try {
+      const url = await photos.viewUrl(req.params.boardId, res.locals.userId!, req.params.itemId);
+      // 주소가 살아 있는 동안은 브라우저가 이 넘김을 다시 써도 된다 (본인 브라우저에만)
+      res.set('Cache-Control', `private, max-age=${VIEW_EXPIRES_SECONDS - 60}`);
+      res.redirect(302, url);
     } catch (error) {
       sendError(res, error);
     }

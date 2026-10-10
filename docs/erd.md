@@ -107,7 +107,7 @@ bigint board_id FK "INDEX"
 string item_type "article | memo | photo"
 bigint article_id FK "nullable, article 타입일 때만"
 text content "memo 타입일 때 텍스트"
-string image_key "photo 타입일 때 S3 객체 key (비공개 버킷, presigned URL로 조회)"
+string image_key "photo 타입일 때 S3 객체 key (비공개 버킷 boards/{board_id}/{uuid}.확장자, presigned URL로 조회)"
 float position_x
 float position_y
 float prev_position_x "nullable, AI 자동 정렬 전 좌표(원래대로 복원용)"

@@ -16,6 +16,7 @@ import { ZOOM_STEP, categoryLabel, centerOn, fitView, toBoard, zoomAt, type View
 import { sourceDiversity } from './diversity'
 import { FeedPanel } from './FeedPanel'
 import { arrangeOutcome, type ArrangeResult } from './arrangeOutcome'
+import { PHOTO_ACCEPT, PhotoUploadError, checkPhoto, uploadPhoto } from './photoUpload'
 import { ROLE_LABEL } from './roles'
 import type { BoardItem } from './types'
 import { useBoardSync, type ViewItem } from './useBoardSync'
@@ -213,6 +214,35 @@ export function BoardPage() {
     })
   }
 
+  // ---------- 사진 카드 (F-05, S3) ----------
+  const photoInput = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  /** 사진을 S3에 올린 뒤 그 key로 카드를 만든다. x·y가 없으면 화면 가운데 */
+  const addPhoto = async (file: File, x?: number, y?: number) => {
+    if (locked || uploading) return
+    const problem = checkPhoto(file)
+    if (problem) return showToast(problem, { tone: 'err' })
+    const at = x === undefined || y === undefined ? viewCenter() : { x: Math.round(x), y: Math.round(y) }
+    const retry = { label: '다시 시도', run: () => void addPhoto(file, at.x, at.y) }
+    setUploading(true)
+    showToast('사진을 올리는 중이에요…', { tone: 'info' })
+    try {
+      const imageKey = await uploadPhoto(boardId, file)
+      const preview = URL.createObjectURL(file)
+      const item = await board.addCard({ type: 'photo', imageKey, content: '', preview }, at.x, at.y, { quiet: true })
+      // 저장된 카드는 서버 주소로 다시 그리므로 미리보기는 잠시 뒤 정리
+      setTimeout(() => URL.revokeObjectURL(preview), 30_000)
+      if (!item) return showToast('사진 카드를 추가하지 못했어요.', { tone: 'err', action: retry })
+      setSelectedId(item.id)
+      showToast('사진 카드를 추가했어요. 수정을 눌러 설명을 달 수 있어요.', { tone: 'ok' })
+    } catch (error) {
+      const message = error instanceof ApiError || error instanceof PhotoUploadError ? error.message : '사진을 올리지 못했어요.'
+      showToast(message, { tone: 'err', action: retry })
+    } finally {
+      setUploading(false)
+    }
+  }
+
   // ---------- 메모 (카드 안에서 편집, B9) ----------
   const addMemo = () => {
     if (locked || memoEdit?.saving) return
@@ -237,7 +267,9 @@ export function BoardPage() {
   const saveMemo = async () => {
     if (!memoEdit || memoEdit.saving) return
     const text = memoEdit.text.trim()
-    if (!text) return setMemoEdit({ ...memoEdit, error: 'empty' })
+    // 사진 설명은 비워도 된다 (메모는 내용이 있어야 함)
+    const isPhoto = board.items.find((i) => i.id === memoEdit.id)?.type === 'photo'
+    if (!text && !isPhoto) return setMemoEdit({ ...memoEdit, error: 'empty' })
     const session = memoEdit.session
     setMemoEdit({ ...memoEdit, saving: true, error: null })
     // 결과는 시작한 편집 세션에만 적용한다
@@ -581,6 +613,8 @@ export function BoardPage() {
               onMoveEnd={(id, x, y) => void board.moveCard(id, x, y)}
               onDragMove={board.dragCard}
               onDropArticle={(article, x, y) => addArticle(article, x, y)}
+              onDropPhoto={(file, x, y) => void addPhoto(file, x, y)}
+              photoSrc={(item) => `/api/boards/${boardId}/items/${item.id}/photo`}
               onDetail={(id) => openRight({ kind: 'detail', itemId: id })}
               onEditMemo={editMemo}
               onDeleteCard={(id) => void deleteCard(id)}
@@ -653,11 +687,28 @@ export function BoardPage() {
                   <Icon name="link" />
                   링크
                 </button>
-                {/* 사진 카드는 서버 배포 때(S3) 함께 만든다 — 그전까지는 준비 중으로 표시 */}
-                <button type="button" className="toolbar__btn" disabled title="사진 카드는 준비 중이에요.">
+                <button
+                  type="button"
+                  className="toolbar__btn"
+                  onClick={() => photoInput.current?.click()}
+                  disabled={locked || uploading}
+                  aria-busy={uploading}
+                  title="jpg·png·webp, 10MB 이하 (보드에 사진 파일을 끌어다 놓아도 돼요)"
+                >
                   <Icon name="image" />
-                  사진
+                  {uploading ? '올리는 중…' : '사진'}
                 </button>
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept={PHOTO_ACCEPT}
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = '' // 같은 파일을 다시 골라도 onChange가 오도록
+                    if (file) void addPhoto(file)
+                  }}
+                />
                 <button
                   type="button"
                   className={`toolbar__btn${connectMode ? ' toolbar__btn--on' : ''}`}

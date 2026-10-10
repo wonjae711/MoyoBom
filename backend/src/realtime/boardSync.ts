@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import type { BoardService } from '../boards/service.js';
 import { BoardError, type BoardCluster, type BoardItem } from '../boards/types.js';
+import { PhotoError, type PhotoService } from '../photos/service.js';
 
 export const boardRoom = (boardId: string) => `board:${boardId}`;
 
@@ -17,6 +18,15 @@ const schemas = {
       boardId: id,
       type: z.literal('memo'),
       content: z.string().max(2000),
+      x: coord,
+      y: coord,
+      clientId: z.string().max(64).optional(),
+    }),
+    z.object({
+      boardId: id,
+      type: z.literal('photo'),
+      imageKey: z.string().max(200),
+      content: z.string().max(2000).optional(),
       x: coord,
       y: coord,
       clientId: z.string().max(64).optional(),
@@ -57,7 +67,7 @@ export interface BoardNotifier {
  * - card:moving → 드래그 중 위치. DB에 저장하지 않고 중계만 한다 (클라이언트가 50~100ms 간격으로 보냄)
  * 동시 수정은 last-write-wins (설계 원칙 3).
  */
-export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier {
+export function attachBoardSync(io: Server, boards: BoardService, photos?: PhotoService): BoardNotifier {
   io.on('connection', (socket: Socket) => {
     const userId = String(socket.data.userId);
 
@@ -80,6 +90,8 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
           if (error instanceof BoardError) {
             // 이미 삭제된 카드에 대한 요청 등 — 무시하고 기록만 남긴다 (F-05 예외 처리)
             if (error.code === 'not_found') console.warn(`[board] ${event} 대상 없음 (user ${userId})`);
+            reply({ ok: false, error: error.code, message: error.message });
+          } else if (error instanceof PhotoError) {
             reply({ ok: false, error: error.code, message: error.message });
           } else {
             console.error(`[board] ${event} 처리 실패:`, error instanceof Error ? error.message : error);
@@ -109,7 +121,16 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
     });
 
     on('card:add', async ({ boardId, clientId, ...input }) => {
-      const item = await boards.addItem(boardId, userId, input);
+      if (input.type === 'photo') {
+        // 사진 기능이 꺼져 있으면(버킷 미설정) 사진 카드를 받지 않는다
+        if (!photos) throw new BoardError('invalid', '사진 카드를 사용할 수 없습니다');
+        await photos.verifyUpload(boardId, input.imageKey);
+      }
+      const item = await boards.addItem(
+        boardId,
+        userId,
+        input.type === 'photo' ? { ...input, content: input.content?.trim() || null } : input,
+      );
       socket.to(boardRoom(boardId)).emit('card:added', { boardId, item, by: userId });
       return { ok: true, item, clientId };
     });
@@ -146,7 +167,8 @@ export function attachBoardSync(io: Server, boards: BoardService): BoardNotifier
     });
 
     on('card:delete', async ({ boardId, itemId }) => {
-      const { version } = await boards.deleteItem(boardId, userId, itemId);
+      const { version, imageKey } = await boards.deleteItem(boardId, userId, itemId);
+      if (imageKey) void photos?.remove([imageKey]);
       socket.to(boardRoom(boardId)).emit('card:deleted', { boardId, itemId, version, by: userId });
       return { ok: true, version };
     });

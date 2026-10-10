@@ -21,6 +21,9 @@ import { startDigestSchedule } from './digests/schedule.js';
 import { attachUserRooms } from './realtime/userRoom.js';
 import { ClusterService } from './clusters/service.js';
 import { LinkService } from './links/service.js';
+import { PhotoService } from './photos/service.js';
+import { createS3Storage } from './photos/storage.js';
+import { startPhotoSweep } from './photos/schedule.js';
 
 const env = loadEnv();
 const pool = createPool(env.DATABASE_URL);
@@ -79,6 +82,10 @@ const links = new LinkService({
     total: env.AI_SUMMARY_LIMIT_TOTAL,
   }),
 });
+const photos = env.PHOTO_BUCKET
+  ? new PhotoService({ pool, boards, storage: createS3Storage({ bucket: env.PHOTO_BUCKET, region: env.AWS_REGION }) })
+  : undefined;
+if (!photos) console.log('[photos] 사진 카드 꺼짐 (PHOTO_BUCKET 없음)');
 const app = createApp({
   checkDb: () => pingDb(pool),
   articles: { listFeed: (query) => listFeed(pool, query), listSources: () => listSources(pool) },
@@ -106,7 +113,7 @@ const app = createApp({
           }
         : null,
   },
-  boards: { boards, notifier, links, clusters, qa },
+  boards: { boards, notifier, links, clusters, qa, photos },
   digests: { digests },
   appOrigin: env.APP_ORIGIN,
   trustProxy: env.TRUST_PROXY,
@@ -117,9 +124,10 @@ const server = createServer(app);
 const io = new Server(server, { serveClient: false });
 attachSocketAuth(io, { jwtSecret: env.JWT_SECRET, appOrigin: env.APP_ORIGIN });
 attachNewsFeed(io, newsEvents);
-const boardNotifier = attachBoardSync(io, boards);
+const boardNotifier = attachBoardSync(io, boards, photos);
 const userNotifier = attachUserRooms(io);
 const digestSchedule = startDigestSchedule(digests);
+const photoSweep = photos ? startPhotoSweep(photos) : null;
 
 const newsSchedule = env.NEWS_COLLECTOR_ENABLED
   ? startNewsSchedule(createNewsCollector(env, pool, newsEvents), pool)
@@ -132,7 +140,7 @@ server.listen(env.PORT, () => {
 
 function shutdown(signal: string): void {
   console.log(`[server] ${signal} 수신, 종료합니다`);
-  void Promise.all([newsSchedule?.stop(), digestSchedule.stop()]).finally(() => {
+  void Promise.all([newsSchedule?.stop(), digestSchedule.stop(), photoSweep?.stop()]).finally(() => {
     // io.close()가 HTTP 서버도 함께 닫는다
     void io.close(() => {
       void pool.end().then(() => process.exit(0));

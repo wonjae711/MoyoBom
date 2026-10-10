@@ -51,6 +51,10 @@ interface Props {
   onMoveEnd: (id: string, x: number, y: number) => void
   onDragMove: (id: string, x: number, y: number) => void
   onDropArticle: (article: FeedArticle, x: number, y: number) => void
+  /** 사진 파일을 보드에 끌어다 놓음 (F-05 사진 카드) */
+  onDropPhoto: (file: File, x: number, y: number) => void
+  /** 저장된 사진 카드의 사진 주소 */
+  photoSrc: (item: ViewItem) => string
   onDetail: (id: string) => void
   onEditMemo: (id: string) => void
   onDeleteCard: (id: string) => void
@@ -216,7 +220,7 @@ export function BoardCanvas(props: Props) {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       props.onSelect(item.id)
-      if (item.type === 'memo') props.onEditMemo(item.id)
+      if (item.type === 'memo' || item.type === 'photo') props.onEditMemo(item.id)
       else if (item.type === 'article') props.onDetail(item.id)
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
@@ -229,11 +233,14 @@ export function BoardCanvas(props: Props) {
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDropping(false)
-    const article = parseArticle(e.dataTransfer.getData(ARTICLE_DRAG_TYPE))
     const rect = viewportRef.current?.getBoundingClientRect()
-    if (!article || !rect || locked) return
+    if (!rect || locked) return
     const at = toBoard(view, e.clientX - rect.left, e.clientY - rect.top)
-    props.onDropArticle(article, at.x, at.y)
+    // 내 컴퓨터의 사진 파일 (한 번에 한 장)
+    const file = e.dataTransfer.files[0]
+    if (file) return props.onDropPhoto(file, at.x, at.y)
+    const article = parseArticle(e.dataTransfer.getData(ARTICLE_DRAG_TYPE))
+    if (article) props.onDropArticle(article, at.x, at.y)
   }
 
   const positioned = items.map((item) => (dragPos?.id === item.id ? { ...item, x: dragPos.x, y: dragPos.y } : item))
@@ -255,7 +262,8 @@ export function BoardCanvas(props: Props) {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(ARTICLE_DRAG_TYPE) || locked) return
+        const accepts = e.dataTransfer.types.includes(ARTICLE_DRAG_TYPE) || e.dataTransfer.types.includes('Files')
+        if (!accepts || locked) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
         if (!dropping) setDropping(true)
@@ -380,7 +388,7 @@ function Card({
       ? `기사 카드: ${item.article?.title ?? '삭제된 기사'}`
       : item.type === 'memo'
         ? `메모 카드: ${item.content || '내용 없음'}`
-        : '사진 카드'
+        : `사진 카드${item.content ? `: ${item.content}` : ''}`
 
   const classes = [
     'card',
@@ -415,7 +423,7 @@ function Card({
               자세히
             </button>
           )}
-          {item.type === 'memo' && (
+          {(item.type === 'memo' || item.type === 'photo') && (
             <button type="button" onClick={() => props.onEditMemo(item.id)}>
               <Icon name="edit" size={16} />
               수정
@@ -478,41 +486,7 @@ function Card({
           <div className="card__memo">
             <span className="card__memo-by">메모 · {authorName(item, props.members)}</span>
             {editing ? (
-              <>
-                <label htmlFor="memo-input" className="visually-hidden">
-                  메모 내용
-                </label>
-                <textarea
-                  id="memo-input"
-                  autoFocus
-                  rows={4}
-                  maxLength={2000}
-                  readOnly={editing.saving}
-                  aria-busy={editing.saving}
-                  value={editing.text}
-                  placeholder="의견, 질문, 관찰을 적어 보세요"
-                  onChange={(e) => props.onMemoChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (editing.saving) return
-                    if (e.key === 'Escape') props.onMemoCancel()
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) props.onMemoSave()
-                  }}
-                />
-                {editing.error === 'empty' && <span className="card__error">내용을 입력해 주세요.</span>}
-                {editing.error === 'fail' && (
-                  <span className="card__error" role="alert">
-                    변경을 저장하지 못했어요. 다시 시도해 주세요.
-                  </span>
-                )}
-                <div className="card__memo-actions">
-                  <button type="button" className="card__memo-cancel" onClick={props.onMemoCancel} disabled={editing.saving}>
-                    취소
-                  </button>
-                  <button type="button" className="btn btn--xs" onClick={props.onMemoSave} disabled={editing.saving}>
-                    {editing.saving ? '저장 중…' : '저장'}
-                  </button>
-                </div>
-              </>
+              <TextEditor editing={editing} props={props} label="메모 내용" placeholder="의견, 질문, 관찰을 적어 보세요" />
             ) : (
               <span className="card__memo-text">{item.content || '내용 없음'}</span>
             )}
@@ -522,8 +496,13 @@ function Card({
 
       {item.type === 'photo' && (
         <div className="card__photo">
-          <div className="card__photo-img" role="img" aria-label="첨부 사진" />
-          <span className="card__memo-by">첨부 사진 · {authorName(item, props.members)}</span>
+          <PhotoImage src={item.preview ?? (temp ? null : props.photoSrc(item))} alt={item.content || '첨부 사진'} />
+          {editing ? (
+            <TextEditor editing={editing} props={props} label="사진 설명" placeholder="사진 설명을 적어 보세요 (비워 둬도 돼요)" />
+          ) : (
+            item.content && <span className="card__memo-text">{item.content}</span>
+          )}
+          <span className="card__memo-by">사진 · {authorName(item, props.members)}</span>
         </div>
       )}
 
@@ -534,6 +513,81 @@ function Card({
         </div>
       )}
     </div>
+  )
+}
+
+/** 카드 안 글 편집 (메모 내용·사진 설명). Ctrl+Enter 저장, Esc 취소 */
+function TextEditor({ editing, props, label, placeholder }: { editing: MemoEdit; props: Props; label: string; placeholder: string }) {
+  return (
+    <>
+      <label htmlFor="memo-input" className="visually-hidden">
+        {label}
+      </label>
+      <textarea
+        id="memo-input"
+        autoFocus
+        rows={4}
+        maxLength={2000}
+        readOnly={editing.saving}
+        aria-busy={editing.saving}
+        value={editing.text}
+        placeholder={placeholder}
+        onChange={(e) => props.onMemoChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (editing.saving) return
+          if (e.key === 'Escape') props.onMemoCancel()
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) props.onMemoSave()
+        }}
+      />
+      {editing.error === 'empty' && <span className="card__error">내용을 입력해 주세요.</span>}
+      {editing.error === 'fail' && (
+        <span className="card__error" role="alert">
+          변경을 저장하지 못했어요. 다시 시도해 주세요.
+        </span>
+      )}
+      <div className="card__memo-actions">
+        <button type="button" className="card__memo-cancel" onClick={props.onMemoCancel} disabled={editing.saving}>
+          취소
+        </button>
+        <button type="button" className="btn btn--xs" onClick={props.onMemoSave} disabled={editing.saving}>
+          {editing.saving ? '저장 중…' : '저장'}
+        </button>
+      </div>
+    </>
+  )
+}
+
+/** 사진 카드의 사진. 불러오지 못하면(주소 만료·삭제 등) 안내와 다시 불러오기 */
+function PhotoImage({ src, alt }: { src: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  if (!src) return <div className="card__photo-img card__photo-img--empty" aria-hidden="true" />
+  if (failed)
+    return (
+      <div className="card__photo-img card__photo-img--empty" data-ui>
+        <span>사진을 불러오지 못했어요.</span>
+        <button
+          type="button"
+          className="card__memo-cancel"
+          onClick={() => {
+            setFailed(false)
+            setAttempt((n) => n + 1)
+          }}
+        >
+          다시 불러오기
+        </button>
+      </div>
+    )
+  return (
+    <img
+      key={attempt}
+      className="card__photo-img"
+      src={attempt ? `${src}${src.includes('?') ? '&' : '?'}retry=${attempt}` : src}
+      alt={alt}
+      draggable={false}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
   )
 }
 
