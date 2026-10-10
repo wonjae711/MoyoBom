@@ -46,6 +46,7 @@
 - AI 이슈 묶기(F-08): `backend/src/clusters/`(algorithm — 평균 연결 군집화, service — 임베딩 생성·재사용·요약·한도·보드별 동시 실행 막기) + `ai/embedder.ts`. 클러스터 DB 작업(교체·제안 무시·자동 정렬·원래대로)은 BoardService에 있고 모두 bump()로 순번을 올린다. 화면은 `BoardCanvas`의 ClusterCard·ClusterLinks, 동기화는 `board:clusters`(순번 비교)
 - DB 테스트 공통 도우미 `src/test/fixtures.ts`(resetDb·createUser·createArticle). 새 테이블이 articles/users를 참조하면 TRUNCATE에 CASCADE 필요
 - 백엔드 테스트는 파일을 순차 실행(`vitest.config.ts` fileParallelism: false — DB 테스트끼리 같은 테이블을 TRUNCATE하기 때문)
+- 서버 배포: `docker-compose.prod.yml`(db·migrate·backend·web) — web은 `frontend/Dockerfile`로 화면을 빌드해 Caddy(`frontend/Caddyfile`)에 넣고 HTTPS 자동 발급·`/api`·`/socket.io` 전달, migrate는 `backend/Dockerfile`의 build 단계로 시작 때마다 마이그레이션. 백엔드는 `TRUST_PROXY=uniquelocal`(Caddy 컨테이너의 X-Forwarded-For를 믿음, 개발 기본은 loopback). 절차는 `docs/deploy.md`
 - 실행 방법은 `README.md` 참고. 작업 완료 전 해당 폴더에서 lint·typecheck·test·build를 통과시킬 것
 
 ## 개발 우선순위 (진행 순서)
@@ -85,13 +86,14 @@
 - 2026-10-04: F-03 하루 한도 값 계정 20·IP 50·전체 300회(사용자 동의한 기본안, 환경 변수로 조정), 요약 모델 OpenAI `gpt-5.4-mini`(환경 변수로 변경 가능)
 - 2026-10-04: 한 사람이 가입 방식별로 여러 계정을 만들 수 있는 문제 대응 확정 — **A. 로그인 화면에 "최근 로그인 방식" 표시**(브라우저 localStorage, 네이버 로그인 붙일 때 구현) / **B. 비용 드는 AI 기능(F-03 등)은 계정 + IP + 서비스 전체 일일 한도로 제한**(F-03 구현 시 필수). C. 계정 연결 기능은 후보(전 기능 완료 후 검토). 휴대폰 본인인증은 하지 않음
 - 2026-09-30: 개발 순서 확정(위 "개발 우선순위" 표). 중간발표 2026-10-15. 목표는 전 기능(Must·Should·Could) 구현
+- 2026-10-10: 서버 주소는 도메인을 사지 않고 **Elastic IP + sslip.io**(예: `13-125-1-2.sslip.io`)로 HTTPS 사용 (사용자 결정 — HTTP는 secure 쿠키·클립보드·Web Locks가 동작하지 않아 제외). 웹 서버는 인증서 자동 발급을 위해 nginx 대신 **Caddy**
 - 2026-10-05: 중간발표·최종발표 시연은 **서버(AWS EC2)에 올려서** 진행 (사용자 결정). 배포는 Docker Compose + EC2(기술 스택 고정안)
 - 2026-10-04: 최종발표 **2026-11-26** 확정. 보드 캔버스 비주얼 **A(여유)** 로 진행. F-ID가 없는 디자인 목업 요소는 개발 범위에 자동 포함하지 않음. API 명세서는 개발 완료 후 실제 코드 기준으로 갱신
 
 ## 미결정 사항 (작업 전 사용자에게 확인)
 
 - 주차별 실제 날짜(캘린더)
-- 서버 배포 시점(사용자가 다시 말할 때 진행) — 준비물: AWS 계정·EC2(메모리 2GB 이상 권장)·도메인(HTTPS), 카카오 리다이렉트 URI 추가 등록, 서버용 키 입력
+- 서버 배포 실행(2026-10-10 시작) — 배포 파일 완료, 사용자가 `docs/deploy.md` 1~5단계(EC2·Elastic IP·서버 .env·소셜 로그인 주소 등록) 진행 후 첫 실행 확인 필요
 
 ## 진행 상황
 
@@ -126,6 +128,7 @@
 - 2026-10-08: 사용자가 보라 테마 화면에서 남은 수용 기준(F-03 화면·F-04·F-08·F-09·F-10·F-11·F-12)을 브라우저로 모두 확인 → 체크. 남은 것: F-05 사진 카드(S3, 배포 때), F-13. 중간 발표(10-15) 준비 시작
 - 2026-10-09: 오류 경계 작업 때 정리 도구로 바뀐 코드 모양을 되돌림(2cb7640). F-13 반대 관점 추천을 시험 구현(03c3473 서버·58e2379 화면 — 이슈별 다른 언론사 기사 + AI가 확신한 "다른 시각")하고 실기사로 확인했으나, 사용자 결정으로 **보류** — 찬반이 없는 이슈(예: 부캉이)에서는 반대 시각 찾기가 어려움. 코드는 2cb7640 상태로 되돌리고 커밋 기록에만 남김(요구사항 F-13 절)
 - 2026-10-09: Notion 일괄 동기화(사용자 요청) — Codex가 Notion에서 직접 고친 정정(요구사항 F-08 처리 로직 1·6, 기획/설계서 4.1·4.3·데이터 흐름 5·배포 비고)을 먼저 저장소 md에 옮긴 뒤, 요구사항 명세서·ERD(ver.1.13)·기획/설계서 원본 페이지와 저장소 md 사본(CLAUDE.md·README.md 본문, 첨부 5개)을 갱신하고 LLM 간 상호작용 문서에 세션 정리 회신. "문서 동기화" 절 문구는 사용자 요청으로 원래대로 유지
+- 2026-10-10: 배포 준비 — 백엔드·웹 Dockerfile, Caddy 설정(HTTPS 자동 발급·SPA·캐시), `docker-compose.prod.yml`(마이그레이션 자동 적용, DB·백엔드 포트 비공개), `TRUST_PROXY` 환경 변수, `docs/deploy.md`. 로컬에서 운영 구성 그대로 실행해 확인(health·SPA 라우트·HTTP→HTTPS·카카오 리다이렉트 주소·Secure 쿠키·Socket.io·캐시 헤더). 테스트 백엔드 300. 다음: 사용자 EC2 준비 후 서버 첫 실행
 
 ## 코딩 컨벤션
 

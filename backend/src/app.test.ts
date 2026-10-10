@@ -122,3 +122,10 @@ describe('GET /api/articles', () => {
     expect(res.body).toEqual({ error: '서버 오류' });
   });
 });
+
+describe('trust proxy', () => {
+  it('기본은 loopback(개발 Vite 프록시), 배포 설정을 주면 그 값을 쓴다', () => {
+    expect(makeApp().app.get('trust proxy')).toBe('loopback');
+    expect(makeApp({ trustProxy: 'uniquelocal' }).app.get('trust proxy')).toBe('uniquelocal');
+  });
+});

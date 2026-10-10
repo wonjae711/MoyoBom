@@ -23,6 +23,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   /** 화면 주소. 쿠키 인증 요청·소켓 연결의 Origin 확인에 쓴다 */
   APP_ORIGIN: z.url().default('http://localhost:5173'),
+  /** 믿을 프록시 범위(Express 'trust proxy'). 배포(Docker)에서는 uniquelocal — 백엔드 포트는 밖에 열지 않고 Caddy만 연결한다 */
+  TRUST_PROXY: z.string().min(1).default('loopback'),
 
   /** 카카오 로그인 (선택). 없으면 카카오 로그인 버튼이 "준비 중"으로 표시된다 */
   KAKAO_REST_API_KEY: optionalString,

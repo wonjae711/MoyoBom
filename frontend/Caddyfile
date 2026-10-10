@@ -1,0 +1,23 @@
+# 배포용 웹 서버 설정. DOMAIN은 docker-compose.prod.yml이 넘겨준다 (예: 13-125-1-2.sslip.io)
+# Caddy가 Let's Encrypt 인증서를 자동으로 받고 갱신하며, HTTP는 HTTPS로 넘긴다.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API와 Socket.io(WebSocket)는 백엔드로. X-Forwarded-For에는 실제 접속자 IP가 들어간다
+	@backend path /api/* /socket.io/*
+	handle @backend {
+		reverse_proxy backend:4000
+	}
+
+	handle {
+		root * /srv
+		# 해시가 붙은 빌드 파일은 오래 캐시, 나머지(index.html 등)는 매번 확인 (새 배포가 바로 보이도록)
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		header @notAssets Cache-Control "no-cache"
+		@notAssets not path /assets/*
+		# 화면 라우트(/boards/:id 등)는 index.html로
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -47,6 +47,10 @@ npm install
 npm run dev                   # 화면 (/api 요청은 백엔드로 프록시)
 ```
 
+## 서버 배포
+
+AWS EC2 + Docker Compose(`docker-compose.prod.yml`). 절차는 [`docs/deploy.md`](docs/deploy.md).
+
 ## 검사
 
 | 위치 | 명령 |

@@ -109,10 +109,11 @@ const app = createApp({
   boards: { boards, notifier, links, clusters, qa },
   digests: { digests },
   appOrigin: env.APP_ORIGIN,
+  trustProxy: env.TRUST_PROXY,
 });
 const server = createServer(app);
 
-// 개발 중에는 Vite 프록시, 배포에서는 nginx가 같은 출처로 연결하므로 CORS를 열지 않는다.
+// 개발 중에는 Vite 프록시, 배포에서는 Caddy가 같은 출처로 연결하므로 CORS를 열지 않는다.
 const io = new Server(server, { serveClient: false });
 attachSocketAuth(io, { jwtSecret: env.JWT_SECRET, appOrigin: env.APP_ORIGIN });
 attachNewsFeed(io, newsEvents);
