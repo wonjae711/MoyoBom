@@ -13,7 +13,7 @@ import {
 } from './cardLayout'
 import type { BoardCluster, BoardConnection, BoardMember } from './types'
 import type { ViewItem } from './useBoardSync'
-import { clampTilt, yarn } from './detective'
+import { wrapTilt, yarn } from './detective'
 import { Thumb } from '../ui/Thumb'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 
@@ -222,7 +222,7 @@ export function BoardCanvas(props: Props) {
       props.onMoveEnd(item.id, item.x + dx, item.y + dy)
     } else if ((e.key === '[' || e.key === ']') && !item.id.startsWith('tmp-')) {
       e.preventDefault()
-      props.onRotateEnd(item.id, clampTilt(item.rotation + (e.key === '[' ? -5 : 5)))
+      props.onRotateEnd(item.id, wrapTilt(item.rotation + (e.key === '[' ? -5 : 5)))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       props.onSelect(item.id)
@@ -249,6 +249,8 @@ export function BoardCanvas(props: Props) {
     if (article) props.onDropArticle(article, at.x, at.y)
   }
 
+  /** 마우스를 올린 연결선 (클릭 판정은 카드 아래, 보이는 선은 카드 위라서 따로 기억) */
+  const [hoverLine, setHoverLine] = useState<string | null>(null)
   const positioned = items.map((item) => (dragPos?.id === item.id ? { ...item, x: dragPos.x, y: dragPos.y } : item))
   const byId = new Map(positioned.map((i) => [i.id, i]))
   const grid = Math.max(8, 24 * view.scale)
@@ -286,8 +288,8 @@ export function BoardCanvas(props: Props) {
           byId={byId}
           heights={props.heights}
           connections={props.connections}
-          selectedId={props.selectedConnectionId}
           onSelect={connectMode || locked ? undefined : props.onSelectConnection}
+          onHover={setHoverLine}
         />
         {positioned.map((item) => (
           <ErrorBoundary key={item.id} resetKey={item} fallback={(retry) => <BrokenCard item={item} onRetry={retry} />}>
@@ -308,6 +310,13 @@ export function BoardCanvas(props: Props) {
             <ClusterCard cluster={cluster} items={positioned} props={props} />
           </ErrorBoundary>
         ))}
+        <LinksOver
+          byId={byId}
+          heights={props.heights}
+          connections={props.connections}
+          selectedId={props.selectedConnectionId}
+          hoverId={hoverLine}
+        />
         {props.selectedConnectionId && !connectMode && !locked && (
           <ConnectionMenu
             key={props.selectedConnectionId}
@@ -415,7 +424,7 @@ function Card({
       if (delta > 180) delta -= 360
       if (delta < -180) delta += 360
       const next = base + delta
-      last = clampTilt(ev.shiftKey ? Math.round(next / 15) * 15 : next)
+      last = wrapTilt(ev.shiftKey ? Math.round(next / 15) * 15 : next)
       setRotating(last)
     }
     const end = () => {
@@ -444,6 +453,7 @@ function Card({
     dimmed && 'card--dim',
     lit && 'card--lit',
     (item.pending || temp) && 'card--saving',
+    rotating !== null && 'card--rotating',
     props.connectMode && 'card--connect',
   ]
     .filter(Boolean)
@@ -457,7 +467,15 @@ function Card({
       role="group"
       aria-label={aria}
       className={classes}
-      style={{ left: item.x, top: item.y, width, zIndex: dragging ? 100000 : item.zIndex, '--tilt': `${tilt}deg` } as CSSProperties}
+      style={
+        {
+          left: item.x,
+          top: item.y,
+          width,
+          zIndex: dragging ? 100000 : selected || editing || confirming ? ABOVE_LINKS : item.zIndex,
+          '--tilt': `${tilt}deg`,
+        } as CSSProperties
+      }
       onPointerDown={onDown}
       onKeyDown={onKey}
     >
@@ -738,20 +756,71 @@ function ConnectionMenu({
  * 선 (월드 좌표 SVG): 클러스터 카드에서 묶인 카드로 가는 옅은 점선(F-08)과 사용자가 그은 연결선(F-10).
  * 연결선은 가늘어 누르기 어려우므로 투명한 넓은 선을 함께 깔아 누를 수 있게 한다
  */
+/** 카드보다 위 — 연결선 층보다도 위에 올라오는 카드(선택·편집·삭제 확인 중) */
+const ABOVE_LINKS = 99995
+
+/**
+ * 연결선을 카드 위에 그린다 (2026-10-10 사용자 요청). 이 층은 클릭을 받지 않는다 — 카드 위를 지나는 선을 눌러도 카드가 잡히고,
+ * 빈 곳의 선은 카드 아래 Lines의 판정 선이 받는다. 선 끝에는 압정을 다시 그려 실이 압정에 묶인 것처럼 보이게 한다.
+ */
+function LinksOver({
+  byId,
+  heights,
+  connections,
+  selectedId,
+  hoverId,
+}: {
+  byId: Map<string, ViewItem>
+  heights: Map<string, number>
+  connections: BoardConnection[]
+  selectedId: string | null
+  hoverId: string | null
+}) {
+  return (
+    <svg className="canvas__lines canvas__lines--over" aria-hidden="true">
+      <defs>
+        <radialGradient id="pin-gradient" cx="35%" cy="30%" r="75%">
+          <stop offset="0%" style={{ stopColor: 'var(--bg-pin-light)' }} />
+          <stop offset="55%" style={{ stopColor: 'var(--bg-pin)' }} />
+          <stop offset="100%" style={{ stopColor: 'var(--bg-pin-dark)' }} />
+        </radialGradient>
+      </defs>
+      {connections.map((c) => {
+        const from = byId.get(c.fromId)
+        const to = byId.get(c.toId)
+        if (!from || !to) return null
+        const line = yarn(from, to, heights)
+        const classes = ['canvas__link', selectedId === c.id && 'canvas__link--selected', hoverId === c.id && 'canvas__link--hover']
+        return (
+          <g key={c.id}>
+            <path className={classes.filter(Boolean).join(' ')} d={line.d} />
+            {[line.from, line.to].map((p, i) => (
+              <g key={i} className="canvas__pin">
+                <circle cx={p.x} cy={p.y} r={7} fill="url(#pin-gradient)" />
+                <circle cx={p.x - 2.4} cy={p.y - 2.9} r={1.5} fill="rgba(255, 255, 255, 0.9)" />
+              </g>
+            ))}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
 function Lines({
   clusters,
   byId,
   heights,
   connections,
-  selectedId,
   onSelect,
+  onHover,
 }: {
   clusters: BoardCluster[]
   byId: Map<string, ViewItem>
   heights: Map<string, number>
   connections: BoardConnection[]
-  selectedId: string | null
   onSelect?: (id: string) => void
+  onHover: (id: string | null) => void
 }) {
   return (
     <svg className="canvas__lines" aria-hidden="true">
@@ -768,16 +837,17 @@ function Lines({
         const from = byId.get(c.fromId)
         const to = byId.get(c.toId)
         if (!from || !to) return null
-        const selected = selectedId === c.id
-        // 탐정 보드의 빨간 실: 두 카드의 압정 사이에 살짝 처지게
+        if (!onSelect) return null
+        // 보이는 선은 카드 위(LinksOver)에 그리고, 여기는 빈 곳에서 선을 누르는 판정만 맡는다
         const { d } = yarn(from, to, heights)
         return (
           <g key={c.id} data-line={c.id}>
-            <path className={`canvas__link${selected ? ' canvas__link--selected' : ''}`} d={d} />
             {onSelect && (
               <path
                 className="canvas__link-hit"
                 d={d}
+                onPointerEnter={() => onHover(c.id)}
+                onPointerLeave={() => onHover(null)}
                 onPointerDown={(e) => {
                   e.stopPropagation()
                   onSelect(c.id)

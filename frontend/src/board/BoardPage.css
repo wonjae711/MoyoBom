@@ -561,6 +561,10 @@
 }
 
 /* 카드 위 메뉴·안내는 카드가 기울어도 똑바로 보이게 */
+.card--rotating {
+  transition: none;
+}
+
 .card > .card__menu,
 .card > .card__confirm,
 .card > .card__tag {
@@ -1756,9 +1760,19 @@
 }
 
 /* 연결선에 마우스를 올리면 눌러서 고를 수 있음을 보여 준다 */
-.canvas__link-hit:hover + .canvas__link,
-g:hover > .canvas__link {
+/* 연결선에 마우스를 올리면 (판정은 카드 아래 층, 보이는 선은 카드 위 층) */
+.canvas__link--hover {
   stroke: var(--line-primary);
+}
+
+/* 카드 위에 그리는 연결선 층 — 클릭은 받지 않는다. 선택·편집 중인 카드(99995)와 끌고 있는 카드는 이보다 위 */
+.canvas__lines--over {
+  z-index: 99990;
+  pointer-events: none;
+}
+
+.canvas__pin {
+  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.4));
 }
 
 /* ---------- 기사 대표 사진 ---------- */
