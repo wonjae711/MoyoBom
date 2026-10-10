@@ -200,6 +200,8 @@ describe.skipIf(!testDatabaseUrl)('실시간 협업 보드 (Socket.io + DB)', ()
     const moved = next<{ item: BoardItem }>(owner, 'card:moved');
     expect(await emit(friend, 'card:move', { boardId, itemId: item.id, x: 300, y: 400, rotation: 5 })).toMatchObject({ ok: true });
     expect((await moved).item).toMatchObject({ x: 300, y: 400, rotation: 5 });
+    expect(await emit(friend, 'card:move', { boardId, itemId: item.id, x: 300, y: 400, scale: 2 })).toMatchObject({ ok: true, item: { scale: 2 } });
+    expect(await emit(friend, 'card:move', { boardId, itemId: item.id, x: 300, y: 400, scale: 9 })).toMatchObject({ ok: false, error: 'invalid' });
 
     // 메모 수정
     const memoAck = await emit<{ item: BoardItem }>(friend, 'card:add', { boardId, type: 'memo', content: '초안', x: 0, y: 0 });

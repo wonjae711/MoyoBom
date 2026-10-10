@@ -4,7 +4,7 @@ import { createTestPool, testDatabaseUrl } from '../test/db.js';
 import { createUser, resetDb } from '../test/fixtures.js';
 import { BoardService, MAX_AUTO_TILT } from './service.js';
 
-describe.skipIf(!testDatabaseUrl)('카드 기울기 (탐정 보드, DB)', () => {
+describe.skipIf(!testDatabaseUrl)('카드 기울기·크기 (탐정 보드, DB)', () => {
   let pool: pg.Pool;
   let owner: string;
 
@@ -36,5 +36,22 @@ describe.skipIf(!testDatabaseUrl)('카드 기울기 (탐정 보드, DB)', () => 
     expect(card.rotation).toBe(2.5);
     expect((await boards.moveItem(boardId, owner, card.id, { x: 0, y: 0, rotation: -17 })).rotation).toBe(-17);
     expect((await boards.moveItem(boardId, owner, card.id, { x: 50, y: 50 })).rotation).toBe(-17);
+  });
+
+  it('카드 크기(배율)는 기본 1이고, 바꾸면 저장되며 옮기거나 돌려도 유지된다', async () => {
+    const boards = new BoardService(pool, { tilt: () => 0 });
+    const boardId = (await boards.createBoard(owner, '보드')).id;
+    const card = await boards.addItem(boardId, owner, { type: 'memo', content: '메모', x: 0, y: 0 });
+    expect(card.scale).toBe(1);
+    expect((await boards.moveItem(boardId, owner, card.id, { x: 0, y: 0, scale: 1.75 })).scale).toBe(1.75);
+    const after = await boards.moveItem(boardId, owner, card.id, { x: 10, y: 10, rotation: 30 });
+    expect(after).toMatchObject({ scale: 1.75, rotation: 30 });
+  });
+
+  it('[예외] 범위(0.6~2.5)를 벗어난 배율은 DB가 거절한다', async () => {
+    const boards = new BoardService(pool);
+    const boardId = (await boards.createBoard(owner, '보드')).id;
+    const card = await boards.addItem(boardId, owner, { type: 'memo', content: '메모', x: 0, y: 0 });
+    await expect(boards.moveItem(boardId, owner, card.id, { x: 0, y: 0, scale: 5 })).rejects.toThrow();
   });
 });

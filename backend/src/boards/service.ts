@@ -26,6 +26,7 @@ interface ItemRow {
   position_x: number;
   position_y: number;
   rotation: number;
+  scale: number;
   z_index: number;
   created_by: string | null;
   updated_at: Date;
@@ -44,7 +45,7 @@ interface ItemRow {
 
 const ITEM_COLUMNS = `
   bi.id, bi.item_type, bi.article_id, bi.content, bi.image_key, bi.position_x, bi.position_y,
-  bi.rotation, bi.z_index, bi.created_by, bi.updated_at, bi.version::text AS version,
+  bi.rotation, bi.scale, bi.z_index, bi.created_by, bi.updated_at, bi.version::text AS version,
   (bi.arranged_version IS NOT NULL) AS arranged,
   a.title AS a_title, a.description AS a_description, a.source AS a_source, a.category AS a_category,
   a.original_link AS a_original_link, a.published_at AS a_published_at,
@@ -74,6 +75,7 @@ function toItem(row: ItemRow): BoardItem {
     x: row.position_x,
     y: row.position_y,
     rotation: row.rotation,
+    scale: row.scale,
     zIndex: row.z_index,
     createdBy: row.created_by,
     updatedAt: row.updated_at.toISOString(),
@@ -447,21 +449,21 @@ export class BoardService {
     boardId: string,
     userId: string,
     itemId: string,
-    to: { x: number; y: number; rotation?: number },
+    to: { x: number; y: number; rotation?: number; scale?: number },
   ): Promise<BoardItem> {
     return this.tx(async (client) => {
       // 잠금을 먼저 잡고 권한을 본다 — 진행 중인 내보내기가 커밋된 뒤의 멤버 상태로 판단하도록 (L-06)
       const seq = await this.bump(client, boardId);
       await this.requireRole(boardId, userId, 'member', client);
       const { rowCount } = await client.query(
-        `UPDATE board_items SET position_x = $3, position_y = $4, rotation = coalesce($5, rotation),
+        `UPDATE board_items SET position_x = $3, position_y = $4, rotation = coalesce($5, rotation), scale = coalesce($7, scale),
            z_index = (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1),
            updated_at = now(), version = $6
          WHERE board_id = $1 AND id = $2`,
-        [boardId, itemId, to.x, to.y, to.rotation ?? null, seq],
+        [boardId, itemId, to.x, to.y, to.rotation ?? null, seq, to.scale ?? null],
       );
       if (!rowCount) throw new BoardError('not_found', '이미 삭제된 카드입니다');
-      await this.log(client, boardId, userId, 'card:move', { itemId, x: to.x, y: to.y, rotation: to.rotation });
+      await this.log(client, boardId, userId, 'card:move', { itemId, x: to.x, y: to.y, rotation: to.rotation, scale: to.scale });
       return this.selectItem(client, boardId, itemId);
     });
   }

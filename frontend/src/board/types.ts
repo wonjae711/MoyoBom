@@ -46,6 +46,8 @@ export interface BoardItem {
   x: number
   y: number
   rotation: number
+  /** 카드 배율 (0.6~2.5, 1 = 기본 크기) — 카드를 통째로 확대·축소 */
+  scale: number
   zIndex: number
   createdBy: string | null
   updatedAt: string

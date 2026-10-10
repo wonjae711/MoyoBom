@@ -49,8 +49,8 @@ export function boundsOf(items: BoardItem[], heights: Map<string, number>): { x0
   let x1 = -Infinity
   let y1 = -Infinity
   for (const item of items) {
-    const w = cardWidth(item)
-    const h = cardHeight(item, heights)
+    const w = cardWidth(item) * (item.scale ?? 1)
+    const h = cardHeight(item, heights) * (item.scale ?? 1)
     x0 = Math.min(x0, item.x - w / 2)
     x1 = Math.max(x1, item.x + w / 2)
     y0 = Math.min(y0, item.y - h / 2)

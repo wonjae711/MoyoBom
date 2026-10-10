@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pinOf, wrapTilt, yarn } from './detective'
+import { MAX_SCALE, MIN_SCALE, clampScale, pinOf, wrapTilt, yarn } from './detective'
 
 const card = (id: string, x: number, y: number, rotation = 0) => ({ id, x, y, rotation })
 
@@ -35,5 +35,16 @@ describe('탐정 보드 모양 계산', () => {
     expect(line.from).toEqual({ x: 0, y: 62 })
     expect(line.to).toEqual({ x: 500, y: 62 })
     expect(yarn(card('a', 0, 100), card('b', 5000, 100), heights).mid.y).toBe(62 + 35)
+  })
+
+  it('카드 배율은 5% 단위로 반올림하고 60%~250% 안으로 자른다', () => {
+    expect(clampScale(1.234)).toBe(1.25)
+    expect(clampScale(0.1)).toBe(MIN_SCALE)
+    expect(clampScale(9)).toBe(MAX_SCALE)
+  })
+
+  it('카드를 키우면 압정도 가운데에서 그만큼 멀어진다', () => {
+    const heights = new Map([['a', 200]])
+    expect(pinOf({ ...card('a', 100, 100), scale: 2 }, heights)).toEqual({ x: 100, y: 100 - 88 * 2 })
   })
 })

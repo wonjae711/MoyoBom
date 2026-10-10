@@ -427,6 +427,7 @@ export function BoardPage() {
       x: draftAt.x,
       y: draftAt.y,
       rotation: 0,
+      scale: 1,
       zIndex: Number.MAX_SAFE_INTEGER - 1,
       createdBy: user?.id ?? null,
       updatedAt: '',
@@ -611,9 +612,9 @@ export function BoardPage() {
                 if (memoEdit && id !== memoEdit.id) cancelMemo()
               }}
               onMoveEnd={(id, x, y) => void board.moveCard(id, x, y)}
-              onRotateEnd={(id, rotation) => {
+              onShapeEnd={(id, shape) => {
                 const item = board.items.find((i) => i.id === id)
-                if (item) void board.moveCard(id, item.x, item.y, rotation)
+                if (item) void board.moveCard(id, item.x, item.y, shape)
               }}
               onDragMove={board.dragCard}
               onDropArticle={(article, x, y) => addArticle(article, x, y)}

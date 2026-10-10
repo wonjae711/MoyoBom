@@ -6,6 +6,16 @@ export interface Placed {
   x: number
   y: number
   rotation: number
+  /** 카드 배율 (없으면 1) */
+  scale?: number
+}
+
+/** 카드 배율 범위 (서버·DB와 같음) */
+export const MIN_SCALE = 0.6
+export const MAX_SCALE = 2.5
+/** 배율을 5% 단위로 반올림해 범위 안으로 */
+export function clampScale(scale: number): number {
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(scale * 20) / 20))
 }
 
 /** 기울기를 정수 도로 반올림해 -180° 이상 180° 미만으로 감는다 — 핸들을 계속 돌리면 한 바퀴 돌아 이어진다 */
@@ -20,7 +30,7 @@ export const PIN_OFFSET = 12
 /** 카드 압정 위치: 카드 위쪽 가운데에서 PIN_OFFSET 아래 점을 카드 기울기만큼 돌린 곳 (연결선이 여기에 묶인다) */
 export function pinOf(item: Placed, heights: Map<string, number>): { x: number; y: number } {
   const h = heights.get(item.id) ?? 150
-  const oy = -(h / 2 - PIN_OFFSET)
+  const oy = -(h / 2 - PIN_OFFSET) * (item.scale ?? 1)
   const rad = (item.rotation * Math.PI) / 180
   return { x: item.x - oy * Math.sin(rad), y: item.y + oy * Math.cos(rad) }
 }

@@ -13,6 +13,7 @@ function article(id: string, source: string, articleId = id): BoardItem {
     x: 0,
     y: 0,
     rotation: 0,
+    scale: 1,
     zIndex: 1,
     createdBy: null,
     updatedAt: '',

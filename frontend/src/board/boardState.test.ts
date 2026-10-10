@@ -13,6 +13,7 @@ function item(id: string, version: number, x = 0, zIndex = version): BoardItem {
     x,
     y: 0,
     rotation: 0,
+    scale: 1,
     zIndex,
     createdBy: '1',
     updatedAt: '2026-10-04T00:00:00.000Z',

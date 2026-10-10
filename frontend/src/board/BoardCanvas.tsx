@@ -13,7 +13,7 @@ import {
 } from './cardLayout'
 import type { BoardCluster, BoardConnection, BoardMember } from './types'
 import type { ViewItem } from './useBoardSync'
-import { wrapTilt, yarn } from './detective'
+import { clampScale, wrapTilt, yarn } from './detective'
 import { Thumb } from '../ui/Thumb'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 
@@ -50,8 +50,8 @@ interface Props {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onMoveEnd: (id: string, x: number, y: number) => void
-  /** 회전 핸들·[ ] 키로 카드 기울기를 바꿈 (탐정 보드) */
-  onRotateEnd: (id: string, rotation: number) => void
+  /** 회전 핸들·[ ] 키로 기울기, 크기 핸들·- = 키로 배율을 바꿈 (탐정 보드) */
+  onShapeEnd: (id: string, shape: { rotation?: number; scale?: number }) => void
   onDragMove: (id: string, x: number, y: number) => void
   onDropArticle: (article: FeedArticle, x: number, y: number) => void
   /** 사진 파일을 보드에 끌어다 놓음 (F-05 사진 카드) */
@@ -222,7 +222,10 @@ export function BoardCanvas(props: Props) {
       props.onMoveEnd(item.id, item.x + dx, item.y + dy)
     } else if ((e.key === '[' || e.key === ']') && !item.id.startsWith('tmp-')) {
       e.preventDefault()
-      props.onRotateEnd(item.id, wrapTilt(item.rotation + (e.key === '[' ? -5 : 5)))
+      props.onShapeEnd(item.id, { rotation: wrapTilt(item.rotation + (e.key === '[' ? -5 : 5)) })
+    } else if ((e.key === '-' || e.key === '=' || e.key === '+') && !item.id.startsWith('tmp-')) {
+      e.preventDefault()
+      props.onShapeEnd(item.id, { scale: clampScale(item.scale + (e.key === '-' ? -0.1 : 0.1)) })
     } else if (e.key === 'Enter') {
       e.preventDefault()
       props.onSelect(item.id)
@@ -389,8 +392,9 @@ function Card({
   onKey: (e: KeyboardEvent<HTMLDivElement>) => void
 }) {
   const ref = useMeasure(item.id, props.onHeight)
-  /** 회전 핸들로 돌리는 중인 각도 (놓으면 저장) */
+  /** 회전 핸들로 돌리는 중인 각도, 크기 핸들로 바꾸는 중인 배율 (놓으면 저장) */
   const [rotating, setRotating] = useState<number | null>(null)
+  const [resizing, setResizing] = useState<number | null>(null)
   const temp = item.id.startsWith('tmp-')
   const draft = item.id === DRAFT_MEMO_ID
   const editing = props.memoEdit?.id === item.id ? props.memoEdit : null
@@ -431,8 +435,38 @@ function Card({
       handle.removeEventListener('pointermove', move)
       handle.removeEventListener('pointerup', end)
       handle.removeEventListener('pointercancel', end)
-      if (last !== base) props.onRotateEnd(item.id, last)
+      if (last !== base) props.onShapeEnd(item.id, { rotation: last })
       setRotating(null)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+  }
+
+  /** 카드 가운데에서 멀어진 만큼 키우고, 가까워진 만큼 줄인다 (5% 단위, 60%~250%) */
+  const startResize = (e: PointerEvent<HTMLDivElement>) => {
+    const card = ref.current
+    if (!card || e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    const box = card.getBoundingClientRect()
+    const cx = box.left + box.width / 2
+    const cy = box.top + box.height / 2
+    const start = Math.max(1, Math.hypot(e.clientX - cx, e.clientY - cy))
+    const base = item.scale
+    let last = base
+    const handle = e.currentTarget
+    handle.setPointerCapture(e.pointerId)
+    const move = (ev: globalThis.PointerEvent) => {
+      last = clampScale((base * Math.hypot(ev.clientX - cx, ev.clientY - cy)) / start)
+      setResizing(last)
+    }
+    const end = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+      if (last !== base) props.onShapeEnd(item.id, { scale: last })
+      setResizing(null)
     }
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', end)
@@ -453,7 +487,7 @@ function Card({
     dimmed && 'card--dim',
     lit && 'card--lit',
     (item.pending || temp) && 'card--saving',
-    rotating !== null && 'card--rotating',
+    (rotating !== null || resizing !== null) && 'card--rotating',
     props.connectMode && 'card--connect',
   ]
     .filter(Boolean)
@@ -474,6 +508,7 @@ function Card({
           width,
           zIndex: dragging ? 100000 : selected || editing || confirming ? ABOVE_LINKS : item.zIndex,
           '--tilt': `${tilt}deg`,
+          '--scale': resizing ?? item.scale,
         } as CSSProperties
       }
       onPointerDown={onDown}
@@ -491,6 +526,18 @@ function Card({
         >
           <Icon name="rotate" size={14} />
           {rotating !== null && <span className="card__rotate-deg">{rotating}°</span>}
+        </div>
+      )}
+      {showMenu && (
+        <div
+          data-ui
+          className={`card__resize${resizing !== null ? ' card__resize--on' : ''}`}
+          onPointerDown={startResize}
+          title="끌어서 크기 바꾸기 (60%~250%, 키보드 - =)"
+          aria-hidden="true"
+        >
+          <Icon name="resize" size={14} />
+          {resizing !== null && <span className="card__rotate-deg">{Math.round(resizing * 100)}%</span>}
         </div>
       )}
       {showMenu && (
@@ -794,10 +841,13 @@ function LinksOver({
         return (
           <g key={c.id}>
             <path className={classes.filter(Boolean).join(' ')} d={line.d} />
-            {[line.from, line.to].map((p, i) => (
+            {[
+              { p: line.from, s: from.scale },
+              { p: line.to, s: to.scale },
+            ].map(({ p, s }, i) => (
               <g key={i} className="canvas__pin">
-                <circle cx={p.x} cy={p.y} r={7} fill="url(#pin-gradient)" />
-                <circle cx={p.x - 2.4} cy={p.y - 2.9} r={1.5} fill="rgba(255, 255, 255, 0.9)" />
+                <circle cx={p.x} cy={p.y} r={7 * s} fill="url(#pin-gradient)" />
+                <circle cx={p.x - 2.4 * s} cy={p.y - 2.9 * s} r={1.5 * s} fill="rgba(255, 255, 255, 0.9)" />
               </g>
             ))}
           </g>

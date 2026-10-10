@@ -113,6 +113,7 @@ float position_y
 float prev_position_x "nullable, AI 자동 정렬 전 좌표(원래대로 복원용)"
 float prev_position_y "nullable"
 float rotation
+float scale "카드 배율 0.6~2.5 (기본 1, 2026-10-10 카드 크기 조절)"
 int z_index
 bigint arranged_version "nullable, 자동 정렬 시점의 version (ver.1.8)"
 bigint version "마지막으로 바뀐 때의 BOARDS.seq (ver.1.6)"

@@ -546,7 +546,8 @@
   --card-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.08), 0 4px 12px rgba(var(--shadow-rgb), 0.1);
   position: absolute;
   /* --tilt: 카드 기울기 (탐정 보드, 화면에서 정함). 편집 중에는 0 */
-  transform: translate(-50%, -50%) rotate(var(--tilt, 0deg));
+  /* --scale: 카드 배율 (크기 핸들). 통째로 확대·축소 */
+  transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)) scale(var(--scale, 1));
   box-sizing: border-box;
   border: 1px solid var(--line-border);
   border-radius: 12px;
@@ -569,6 +570,49 @@
 .card > .card__confirm,
 .card > .card__tag {
   rotate: calc(var(--tilt, 0deg) * -1);
+}
+
+/* 메뉴·안내·핸들은 카드를 키우거나 줄여도 원래 크기로 (위쪽 끝을 기준으로 되돌린다) */
+.card > .card__menu {
+  top: calc(-46px / var(--scale, 1));
+  transform-origin: 100% 0;
+  scale: calc(1 / var(--scale, 1));
+}
+
+.card > .card__tag {
+  top: calc(-28px / var(--scale, 1));
+  transform-origin: 0 0;
+  scale: calc(1 / var(--scale, 1));
+}
+
+.card > .card__rotate,
+.card > .card__resize {
+  scale: calc(1 / var(--scale, 1));
+}
+
+/* 크기 핸들 (선택한 카드 오른쪽 아래 모서리) */
+.card__resize {
+  position: absolute;
+  right: -13px;
+  bottom: -13px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-border-strong);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--fg-text-2);
+  box-shadow: 0 1px 3px rgba(var(--shadow-rgb), 0.2);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.card__resize:hover,
+.card__resize--on {
+  border-color: var(--line-primary);
+  color: var(--fg-primary, var(--line-primary));
 }
 
 /* 압정: 카드·AI 이슈 카드 위쪽 가운데 */

@@ -33,7 +33,15 @@ const schemas = {
     }),
   ]),
   'card:moving': z.object({ boardId: id, itemId: id, x: coord, y: coord }),
-  'card:move': z.object({ boardId: id, itemId: id, x: coord, y: coord, rotation: z.number().finite().min(-360).max(360).optional() }),
+  'card:move': z.object({
+    boardId: id,
+    itemId: id,
+    x: coord,
+    y: coord,
+    rotation: z.number().finite().min(-360).max(360).optional(),
+    /** 카드 배율 (크기 조절) */
+    scale: z.number().finite().min(0.6).max(2.5).optional(),
+  }),
   'card:update': z.object({ boardId: id, itemId: id, content: z.string().max(2000) }),
   'card:delete': z.object({ boardId: id, itemId: id }),
   'connection:add': z.object({ boardId: id, fromId: id, toId: id }),
