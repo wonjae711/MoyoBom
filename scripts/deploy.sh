@@ -8,7 +8,8 @@ cd "$(dirname "$0")/.."
 COMPOSE="docker compose -f docker-compose.prod.yml"
 DOMAIN=$(sed -n 's/^DOMAIN=//p' .env | tr -d '\r')
 
-echo "[deploy] $(git log --oneline -1)"
+# CD(SSM)는 root로 실행하는데 저장소 주인은 ubuntu라서 safe.directory를 지정한다
+echo "[deploy] $(git -c safe.directory="$PWD" log --oneline -1)"
 $COMPOSE up -d --build --remove-orphans
 # 예전 이미지·빌드 캐시가 쌓이면 디스크(20GB)가 찬다
 docker image prune -f >/dev/null
