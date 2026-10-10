@@ -496,18 +496,18 @@
   stroke-dasharray: 5 5;
 }
 
-/* 탐정 보드의 빨간 실 (압정 사이, 살짝 처짐) */
+/* 연결선: 두 카드의 압정 사이에 살짝 처진 곡선 (탐정 보드). 색은 원래 보라 선 */
 .canvas__link {
   fill: none;
-  stroke: var(--line-yarn);
-  stroke-width: 2.4;
+  stroke: var(--line-primary-line-2);
+  stroke-width: 2.5;
   stroke-linecap: round;
-  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.35));
 }
 
 .canvas__link--selected {
-  stroke: var(--line-yarn-strong);
-  stroke-width: 3.6;
+  stroke: var(--line-primary);
+  stroke-width: 3.5;
+  stroke-dasharray: 8 5;
 }
 
 .canvas__link-hit {
@@ -577,10 +577,12 @@
   height: 14px;
   margin-left: -7px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.75) 0 2px, transparent 3px), var(--bg-pin);
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.9) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 35% 30%, var(--bg-pin-light) 0%, var(--bg-pin) 55%, var(--bg-pin-dark) 100%);
   box-shadow:
-    0 2px 3px rgba(0, 0, 0, 0.45),
-    inset 0 -2px 2px rgba(0, 0, 0, 0.25);
+    0 2px 3px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.2);
   pointer-events: none;
 }
 
@@ -1756,7 +1758,7 @@
 /* 연결선에 마우스를 올리면 눌러서 고를 수 있음을 보여 준다 */
 .canvas__link-hit:hover + .canvas__link,
 g:hover > .canvas__link {
-  stroke: var(--line-yarn-strong);
+  stroke: var(--line-primary);
 }
 
 /* ---------- 기사 대표 사진 ---------- */

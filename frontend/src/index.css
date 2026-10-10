@@ -14,10 +14,10 @@
   --bg-error:#B42318;
   --bg-error-soft:#FDEDEC;
   --bg-grid:#DCD3E8;
-  /* 탐정 보드 (2026-10-10) */
-  --line-yarn:#B3261E;
-  --line-yarn-strong:#E0362C;
-  --bg-pin:#D93025;
+  /* 탐정 보드 압정 (2026-10-10): 밝은 쪽 → 기본 → 어두운 쪽 그라데이션 */
+  --bg-pin-light:#C4B5FD;
+  --bg-pin:#7C3AED;
+  --bg-pin-dark:#4C1D95;
   --bg-memo:#FFF0B0;
   --bg-memo-strip:#FAE27F;
   --bg-memo-input:#FFFCF2;
@@ -88,9 +88,9 @@
   --bg-error:#B42318;
   --bg-error-soft:#3A1E22;
   --bg-grid:#352E44;
-  --line-yarn:#E0574F;
-  --line-yarn-strong:#FF7A70;
-  --bg-pin:#E5534B;
+  --bg-pin-light:#DDD0FF;
+  --bg-pin:#9D6BFF;
+  --bg-pin-dark:#5B2BB5;
   --bg-memo:#4A3F1E;
   --bg-memo-strip:#5A4C22;
   --bg-memo-input:#2F2919;
