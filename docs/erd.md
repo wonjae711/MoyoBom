@@ -1,6 +1,6 @@
 # 모여봄 — ERD / 테이블 설계
 
-> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-09, ver.1.13)
+> Notion "ERD 테이블 구조" 페이지와 동기화됨 (최종 반영: 2026-10-10, ver.1.14)
 >
 > ver.1.1 변경: 소셜 로그인(카카오·네이버) 컬럼 추가, ARTICLES.category 추가, 임베딩 차원 확정(1536), BOARD_CONNECTIONS 중복 방지 제약 추가
 >
@@ -27,6 +27,7 @@
 > ver.1.12 변경 (2026-10-06, F-07): 이메일 가입·로그인 제거 — USERS.password_hash 삭제, UNIQUE(lower(email)) WHERE local 삭제, CHECK는 "소셜이면 provider_id 필수"로 단순화. provider='local'은 예전 이메일 계정 행(로그인 불가)으로만 남는다
 
 > ver.1.13 변경 (2026-10-06, 기사 사진): ARTICLES.image_url(대표 사진 주소 — 언론사가 밝힌 og:image, https만, 사진 파일은 저장하지 않음)·image_checked_at(주소 찾기를 시도한 시각, 못 찾아도 기록해 다시 가져오지 않음) 추가, INDEX(created_at DESC) WHERE image_checked_at IS NULL AND api_collected
+> ver.1.14 변경 (2026-10-10, F-05 사진 카드·탐정 보드): BOARD_ITEMS.scale(카드 배율 0.6~2.5, 기본 1) 추가·CHECK, 새 카드는 rotation을 -4°~+4°로 저장(기존 기울기 0 카드도 한 번 기울임), photo 카드의 content는 사진 설명(선택), image_key는 `boards/{board_id}/{uuid}.확장자`
 
 ### 1. 시각화 다이어그램 (Mermaid)
 
@@ -106,7 +107,7 @@ bigint id PK
 bigint board_id FK "INDEX"
 string item_type "article | memo | photo"
 bigint article_id FK "nullable, article 타입일 때만"
-text content "memo 타입일 때 텍스트"
+text content "memo 내용, photo는 사진 설명(선택)"
 string image_key "photo 타입일 때 S3 객체 key (비공개 버킷 boards/{board_id}/{uuid}.확장자, presigned URL로 조회)"
 float position_x
 float position_y
@@ -221,6 +222,7 @@ timestamptz created_at
 | BOARD_INVITES | UNIQUE(board_id) | 보드당 유효한 초대 링크 1개. 재발급하면 기존 링크가 무효가 된다 (F-07) |
 | BOARD_ITEMS | INDEX(board_id) | 보드 접속 시 카드 목록 빠른 조회 (F-05) |
 | BOARD_ITEMS | CHECK(article→article_id, memo→content, photo→image_key 필수) | 카드 종류별 필수값 보장 (F-05) |
+| BOARD_ITEMS | CHECK(scale 0.6~2.5) | 카드 배율 범위 (F-05 카드 크기, ver.1.14) |
 | BOARD_ITEMS | INDEX(article_id) WHERE article_id IS NOT NULL | 30일 정리 작업에서 "보드에 올라간 기사" 확인 (F-01) |
 | BOARDS | CHECK(제목 1~50자) | 보드 이름 길이 제한 (F-06). 화면·API 검증은 40자(2026-10-06 사용자 결정) |
 | BOARD_EVENTS | INDEX(board_id, created_at) | 변경 이력(히스토리) 타임라인 조회 성능. 되돌리기(undo)는 F-05에서 범위 제외 |
