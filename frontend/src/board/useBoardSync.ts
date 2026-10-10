@@ -43,7 +43,7 @@ interface Overlays {
   /** 추가 대기 중인 카드 (clientId → 임시 카드) */
   adds: Map<string, BoardItem & { preview?: string }>
   /** 이동 대기 중 (itemId → 위치와 요청 번호 — 같은 카드를 연달아 옮기면 마지막 요청만 반영) */
-  moves: Map<string, { x: number; y: number; zIndex: number; req: number }>
+  moves: Map<string, { x: number; y: number; zIndex: number; rotation?: number; req: number }>
   /** 메모 수정 대기 중 */
   memos: Map<string, { content: string; req: number }>
   /** 삭제 대기 중 */
@@ -237,7 +237,11 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
       const drag = remoteDrag.get(item.id)
       list.push({
         ...item,
-        ...(move ? { x: move.x, y: move.y, zIndex: move.zIndex } : drag ? { x: drag.x, y: drag.y } : {}),
+        ...(move
+          ? { x: move.x, y: move.y, zIndex: move.zIndex, ...(move.rotation === undefined ? {} : { rotation: move.rotation }) }
+          : drag
+            ? { x: drag.x, y: drag.y }
+            : {}),
         ...(memo ? { content: memo.content } : {}),
         pending: Boolean(move || memo),
         ...(drag && !move ? { movingBy: drag.by } : {}),
@@ -320,10 +324,11 @@ export function useBoardSync(boardId: string, options: { onError?: (message: str
   )
 
   const moveCard = useCallback(
-    async (itemId: string, x: number, y: number) => {
+    /** rotation을 주면 기울기도 함께 바꾼다 (탐정 보드 — 회전 핸들) */
+    async (itemId: string, x: number, y: number, rotation?: number) => {
       const req = ++reqCounter.current
-      setOverlays((prev) => ({ ...prev, moves: new Map(prev.moves).set(itemId, { x, y, zIndex: topZ(), req }) }))
-      const res = await send<{ item: BoardItem }>('card:move', { itemId, x, y })
+      setOverlays((prev) => ({ ...prev, moves: new Map(prev.moves).set(itemId, { x, y, zIndex: topZ(), rotation, req }) }))
+      const res = await send<{ item: BoardItem }>('card:move', { itemId, x, y, ...(rotation === undefined ? {} : { rotation }) })
       if (res.ok) settle(res.item)
       else if (res.error === 'not_found') {
         forget(itemId)

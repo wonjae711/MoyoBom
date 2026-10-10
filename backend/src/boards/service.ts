@@ -97,6 +97,12 @@ export interface NewCluster {
 
 type Db = pg.Pool | pg.PoolClient;
 
+/** 새 카드 기울기: -4°~+4°, 0.5° 단위 (2026-10-10 탐정 보드 느낌 — 사용자 요청) */
+export const MAX_AUTO_TILT = 4;
+function randomTilt(): number {
+  return Math.round((Math.random() * 2 - 1) * MAX_AUTO_TILT * 2) / 2;
+}
+
 export type NewItemInput =
   | { type: 'article'; articleId: string; x: number; y: number }
   | { type: 'memo'; content: string; x: number; y: number }
@@ -114,7 +120,15 @@ export type NewItemInput =
  * 클라이언트는 이 값으로 늦게 도착한 이벤트·스냅샷과 겹친 이벤트를 걸러낸다. z_index(최대+1)도 잠금 뒤에 계산해 겹치지 않는다.
  */
 export class BoardService {
-  constructor(private readonly pool: pg.Pool) {}
+  /** 새 카드의 기울기(도). 탐정 보드처럼 살짝 비뚤게 붙인다 — 테스트에서는 고정값을 주입 */
+  private readonly tilt: () => number;
+
+  constructor(
+    private readonly pool: pg.Pool,
+    options: { tilt?: () => number } = {},
+  ) {
+    this.tilt = options.tilt ?? randomTilt;
+  }
 
   private async tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
@@ -402,9 +416,9 @@ export class BoardService {
         if (rowCount) throw new BoardError('invalid', '이미 카드로 만든 사진입니다');
       }
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO board_items (board_id, item_type, article_id, content, image_key, position_x, position_y, z_index, created_by, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7,
-           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $8, $9)
+        `INSERT INTO board_items (board_id, item_type, article_id, content, image_key, position_x, position_y, rotation, z_index, created_by, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+           (SELECT coalesce(max(z_index), 0) + 1 FROM board_items WHERE board_id = $1), $9, $10)
          RETURNING id`,
         [
           boardId,
@@ -414,6 +428,7 @@ export class BoardService {
           input.type === 'photo' ? input.imageKey : null,
           input.x,
           input.y,
+          this.tilt(),
           userId,
           seq,
         ],

@@ -468,8 +468,10 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background-color: var(--fg-canvas);
-  background-image: radial-gradient(var(--bg-grid) 1px, transparent 1.2px);
+  /* 탐정 보드 코르크판 (2026-10-10): 고운 결 + 얼룩. 크기·위치는 확대·이동에 맞춰 화면에서 정한다 */
+  background-color: var(--bg-cork);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 -0.32'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='s'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.045' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.55 -0.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23s)'/%3E%3C/svg%3E");
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.25);
   touch-action: none;
   user-select: none;
 }
@@ -496,18 +498,22 @@
   stroke-dasharray: 5 5;
 }
 
+/* 탐정 보드의 빨간 실 (압정 사이, 살짝 처짐) */
 .canvas__link {
-  stroke: var(--line-primary-line-2);
-  stroke-width: 2.5;
+  fill: none;
+  stroke: var(--line-yarn);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.35));
 }
 
 .canvas__link--selected {
-  stroke: var(--line-primary);
-  stroke-width: 3.5;
-  stroke-dasharray: 8 5;
+  stroke: var(--line-yarn-strong);
+  stroke-width: 3.6;
 }
 
 .canvas__link-hit {
+  fill: none;
   stroke: transparent;
   stroke-width: 16;
   cursor: pointer;
@@ -541,7 +547,8 @@
   /* 보드 위에 놓인 종이처럼 보이도록 가벼운 음영 (2026-10-06 사용자 요청). 선택·강조 링과 함께 쓴다 */
   --card-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.08), 0 4px 12px rgba(var(--shadow-rgb), 0.1);
   position: absolute;
-  transform: translate(-50%, -50%);
+  /* --tilt: 카드 기울기 (탐정 보드, 화면에서 정함). 편집 중에는 0 */
+  transform: translate(-50%, -50%) rotate(var(--tilt, 0deg));
   box-sizing: border-box;
   border: 1px solid var(--line-border);
   border-radius: 12px;
@@ -551,7 +558,73 @@
   transition:
     opacity 0.15s,
     box-shadow 0.15s,
-    border-color 0.15s;
+    border-color 0.15s,
+    transform 0.2s ease-out;
+}
+
+/* 카드 위 메뉴·안내는 카드가 기울어도 똑바로 보이게 */
+.card > .card__menu,
+.card > .card__confirm,
+.card > .card__tag {
+  rotate: calc(var(--tilt, 0deg) * -1);
+}
+
+/* 압정: 카드·AI 이슈 카드 위쪽 가운데 */
+.pin {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.75) 0 2px, transparent 3px), var(--bg-pin);
+  box-shadow:
+    0 2px 3px rgba(0, 0, 0, 0.45),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+/* 회전 핸들 (선택한 카드 오른쪽 위 모서리) */
+.card__rotate {
+  position: absolute;
+  top: -13px;
+  right: -13px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-border-strong);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--fg-text-2);
+  box-shadow: 0 1px 3px rgba(var(--shadow-rgb), 0.2);
+  cursor: grab;
+  touch-action: none;
+}
+
+.card__rotate:hover,
+.card__rotate--on {
+  border-color: var(--line-primary);
+  color: var(--fg-primary, var(--line-primary));
+}
+
+.card__rotate--on {
+  cursor: grabbing;
+}
+
+.card__rotate-deg {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg-text);
+  color: var(--fg-surface);
+  font-size: 11.5px;
+  white-space: nowrap;
+  rotate: calc(var(--tilt, 0deg) * -1);
 }
 
 .card:focus-visible {
@@ -1685,7 +1758,7 @@
 /* 연결선에 마우스를 올리면 눌러서 고를 수 있음을 보여 준다 */
 .canvas__link-hit:hover + .canvas__link,
 g:hover > .canvas__link {
-  stroke: var(--line-primary);
+  stroke: var(--line-yarn-strong);
 }
 
 /* ---------- 기사 대표 사진 ---------- */

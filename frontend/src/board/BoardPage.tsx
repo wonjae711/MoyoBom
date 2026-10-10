@@ -611,6 +611,10 @@ export function BoardPage() {
                 if (memoEdit && id !== memoEdit.id) cancelMemo()
               }}
               onMoveEnd={(id, x, y) => void board.moveCard(id, x, y)}
+              onRotateEnd={(id, rotation) => {
+                const item = board.items.find((i) => i.id === id)
+                if (item) void board.moveCard(id, item.x, item.y, rotation)
+              }}
               onDragMove={board.dragCard}
               onDropArticle={(article, x, y) => addArticle(article, x, y)}
               onDropPhoto={(file, x, y) => void addPhoto(file, x, y)}

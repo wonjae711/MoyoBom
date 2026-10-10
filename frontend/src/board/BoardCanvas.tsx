@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import type { FeedArticle } from '../feed/types'
 import { Icon, Spinner } from '../ui/Icon'
 import {
@@ -13,6 +13,7 @@ import {
 } from './cardLayout'
 import type { BoardCluster, BoardConnection, BoardMember } from './types'
 import type { ViewItem } from './useBoardSync'
+import { clampTilt, yarn } from './detective'
 import { Thumb } from '../ui/Thumb'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 
@@ -49,6 +50,8 @@ interface Props {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onMoveEnd: (id: string, x: number, y: number) => void
+  /** 회전 핸들·[ ] 키로 카드 기울기를 바꿈 (탐정 보드) */
+  onRotateEnd: (id: string, rotation: number) => void
   onDragMove: (id: string, x: number, y: number) => void
   onDropArticle: (article: FeedArticle, x: number, y: number) => void
   /** 사진 파일을 보드에 끌어다 놓음 (F-05 사진 카드) */
@@ -102,6 +105,8 @@ type Gesture =
  * - 피드 기사를 끌어다 놓으면 그 자리에 기사 카드 추가
  * - 선택한 카드 위에 카드 메뉴(자세히·수정·삭제), 삭제는 카드 안에서 한 번 더 확인 (B8)
  */
+/** 코르크 배경 한 장 크기(보드 좌표) */
+const CORK_TILE = 240
 export function BoardCanvas(props: Props) {
   const { items, view, onViewChange, onSize, tool, locked, connectMode } = props
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -217,6 +222,9 @@ export function BoardCanvas(props: Props) {
       e.preventDefault()
       const [dx, dy] = moves[e.key]!
       props.onMoveEnd(item.id, item.x + dx, item.y + dy)
+    } else if ((e.key === '[' || e.key === ']') && !item.id.startsWith('tmp-')) {
+      e.preventDefault()
+      props.onRotateEnd(item.id, clampTilt(item.rotation + (e.key === '[' ? -5 : 5)))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       props.onSelect(item.id)
@@ -245,7 +253,8 @@ export function BoardCanvas(props: Props) {
 
   const positioned = items.map((item) => (dragPos?.id === item.id ? { ...item, x: dragPos.x, y: dragPos.y } : item))
   const byId = new Map(positioned.map((i) => [i.id, i]))
-  const grid = Math.max(8, 24 * view.scale)
+  // 코르크 질감 한 장의 크기 — 확대·이동에 맞춰 같이 움직인다
+  const tile = Math.max(40, CORK_TILE * view.scale)
   const cursor = panning ? 'grabbing' : tool === 'pan' ? 'grab' : 'default'
 
   return (
@@ -253,7 +262,7 @@ export function BoardCanvas(props: Props) {
       ref={viewportRef}
       className="canvas"
       style={{
-        backgroundSize: `${grid}px ${grid}px`,
+        backgroundSize: `${tile}px ${tile}px`,
         backgroundPosition: `${view.x}px ${view.y}px`,
         cursor,
       }}
@@ -307,6 +316,7 @@ export function BoardCanvas(props: Props) {
             key={props.selectedConnectionId}
             connection={props.connections.find((c) => c.id === props.selectedConnectionId)}
             byId={byId}
+            heights={props.heights}
             onDelete={props.onDeleteConnection}
             onClose={() => props.onSelectConnection(null)}
           />
@@ -373,6 +383,8 @@ function Card({
   onKey: (e: KeyboardEvent<HTMLDivElement>) => void
 }) {
   const ref = useMeasure(item.id, props.onHeight)
+  /** 회전 핸들로 돌리는 중인 각도 (놓으면 저장) */
+  const [rotating, setRotating] = useState<number | null>(null)
   const temp = item.id.startsWith('tmp-')
   const draft = item.id === DRAFT_MEMO_ID
   const editing = props.memoEdit?.id === item.id ? props.memoEdit : null
@@ -383,6 +395,43 @@ function Card({
   const member = item.movingBy ? props.members.get(item.movingBy)?.nickname : null
   const width = cardWidth(item)
   const kindLabel = item.type === 'article' ? '기사' : item.type === 'memo' ? '메모' : '사진'
+  // 글을 고치는 동안에는 읽기 쉽게 똑바로 세운다
+  const tilt = editing ? 0 : (rotating ?? item.rotation)
+
+  /** 카드 가운데를 축으로, 누른 곳에서 돌린 만큼 기울인다. Shift를 누르면 15° 단위 */
+  const startRotate = (e: PointerEvent<HTMLDivElement>) => {
+    const card = ref.current
+    if (!card || e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    const box = card.getBoundingClientRect()
+    const cx = box.left + box.width / 2
+    const cy = box.top + box.height / 2
+    const angle = (x: number, y: number) => (Math.atan2(y - cy, x - cx) * 180) / Math.PI
+    const start = angle(e.clientX, e.clientY)
+    const base = item.rotation
+    let last = base
+    const handle = e.currentTarget
+    handle.setPointerCapture(e.pointerId)
+    const move = (ev: globalThis.PointerEvent) => {
+      let delta = angle(ev.clientX, ev.clientY) - start
+      if (delta > 180) delta -= 360
+      if (delta < -180) delta += 360
+      const next = base + delta
+      last = clampTilt(ev.shiftKey ? Math.round(next / 15) * 15 : next)
+      setRotating(last)
+    }
+    const end = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+      if (last !== base) props.onRotateEnd(item.id, last)
+      setRotating(null)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+  }
   const aria =
     item.type === 'article'
       ? `기사 카드: ${item.article?.title ?? '삭제된 기사'}`
@@ -411,11 +460,24 @@ function Card({
       role="group"
       aria-label={aria}
       className={classes}
-      style={{ left: item.x, top: item.y, width, zIndex: dragging ? 100000 : item.zIndex }}
+      style={{ left: item.x, top: item.y, width, zIndex: dragging ? 100000 : item.zIndex, '--tilt': `${tilt}deg` } as CSSProperties}
       onPointerDown={onDown}
       onKeyDown={onKey}
     >
+      <span className="pin" aria-hidden="true" />
       {member && <span className="card__tag">{member}님이 옮기는 중</span>}
+      {showMenu && (
+        <div
+          data-ui
+          className={`card__rotate${rotating !== null ? ' card__rotate--on' : ''}`}
+          onPointerDown={startRotate}
+          title="돌려서 기울기 바꾸기 (Shift: 15° 단위, 키보드 [ ])"
+          aria-hidden="true"
+        >
+          <Icon name="rotate" size={14} />
+          {rotating !== null && <span className="card__rotate-deg">{rotating}°</span>}
+        </div>
+      )}
       {showMenu && (
         <div data-ui role="toolbar" aria-label="카드 메뉴" className="card__menu">
           {item.type === 'article' && (
@@ -603,6 +665,7 @@ function ClusterCard({ cluster, items, props }: { cluster: BoardCluster; items: 
       className="cluster-card"
       style={{ left: cluster.x - CLUSTER_WIDTH / 2, top: cluster.y, width: CLUSTER_WIDTH }}
     >
+      <span className="pin" aria-hidden="true" />
       <div className="cluster-card__label">
         <span className="badge">AI 이슈</span>
         <span>카드 {members.length}개</span>
@@ -630,11 +693,13 @@ function ClusterCard({ cluster, items, props }: { cluster: BoardCluster; items: 
 function ConnectionMenu({
   connection,
   byId,
+  heights,
   onDelete,
   onClose,
 }: {
   connection: BoardConnection | undefined
   byId: Map<string, ViewItem>
+  heights: Map<string, number>
   onDelete: (id: string) => void
   onClose: () => void
 }) {
@@ -642,8 +707,9 @@ function ConnectionMenu({
   const from = connection && byId.get(connection.fromId)
   const to = connection && byId.get(connection.toId)
   if (!connection || !from || !to) return null
+  const { mid } = yarn(from, to, heights)
   return (
-    <div data-ui className="link-menu" style={{ left: (from.x + to.x) / 2, top: (from.y + to.y) / 2 }}>
+    <div data-ui className="link-menu" style={{ left: mid.x, top: mid.y }}>
       {confirming ? (
         <div role="alertdialog" aria-label="연결선 삭제 확인" className="link-menu__confirm">
           <span>이 연결선을 지울까요?</span>
@@ -706,22 +772,15 @@ function Lines({
         const to = byId.get(c.toId)
         if (!from || !to) return null
         const selected = selectedId === c.id
+        // 탐정 보드의 빨간 실: 두 카드의 압정 사이에 살짝 처지게
+        const { d } = yarn(from, to, heights)
         return (
           <g key={c.id} data-line={c.id}>
-            <line
-              className={`canvas__link${selected ? ' canvas__link--selected' : ''}`}
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
-            />
+            <path className={`canvas__link${selected ? ' canvas__link--selected' : ''}`} d={d} />
             {onSelect && (
-              <line
+              <path
                 className="canvas__link-hit"
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
+                d={d}
                 onPointerDown={(e) => {
                   e.stopPropagation()
                   onSelect(c.id)
