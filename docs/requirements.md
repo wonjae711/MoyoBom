@@ -372,6 +372,8 @@ F-01에서 신규 기사가 저장되면 Socket.io를 통해 접속 중인 클�
 
 **구현 (2026-10-05)**: `backend/src/digests/service.ts`(구독·알림함·예약/즉시 생성), `digests/schedule.ts`(5분마다 확인·서버 시작 때 한 번·새벽 4시 10분 30일 지난 알림 정리), `ai/digestWriter.ts`(브리핑 요약), `realtime/userRoom.ts`(본인 방 알림), 마이그레이션 `1791250000000_create-digests.sql`. 화면 `/digests`(구독 만들기·고치기·끄기·지우기·지금 받아보기, 알림함·읽음·모두 읽음·더 보기), 머리글(보드 목록·뉴스 탐색·보드 화면)의 "알림함" 링크에 안 읽은 개수. 실제 기사로 "지금 받아보기" 확인(경제 + 반도체 구독, 기사 20건, 약 3.4초). 예약 실행은 시각을 정해 둔 테스트로 확인(실제 정각 실행은 브라우저 확인 때)
 
+**수정·추가 (2026-10-14)**: 예약 실행이 한도 확인에서 DB 범위 초과 오류로 실패해 정해진 시각에 알림이 오지 않던 문제 수정(서버 한도 값과 같은 값으로 테스트 보강). 사용자 요청으로 브라우저 알림 추가 — 알림함 화면에서 켜고 끄며, 사이트를 열어 둔 동안 예약 다이제스트가 도착하면 운영체제 알림을 띄우고 누르면 알림함으로 이동("지금 받아보기"는 화면 안내만)
+
 API: `GET·POST /api/digests/subscriptions`, `PATCH·DELETE /api/digests/subscriptions/:id`, `POST /api/digests/subscriptions/:id/run`(지금 받아보기), `GET /api/digests`(알림함·안 읽은 개수), `POST /api/digests/:id/read`, `POST /api/digests/read-all`. 소켓: 본인 방(`user:{id}`)으로 `digest:new`
 
 **수용 기준**
