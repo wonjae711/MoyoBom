@@ -11,7 +11,11 @@ const MUTE_KEY = 'moyobom.digestNotify.off'
 
 const supported = () => typeof window !== 'undefined' && 'Notification' in window
 
+/** 저장소를 못 쓰는 브라우저(차단·사생활 모드)에서도 이번 화면에서는 끄기가 지켜지도록 메모리에도 둔다 (Codex N-03) */
+let mutedInMemory: boolean | null = null
+
 function muted(): boolean {
+  if (mutedInMemory !== null) return mutedInMemory
   try {
     return window.localStorage.getItem(MUTE_KEY) === '1'
   } catch {
@@ -20,12 +24,18 @@ function muted(): boolean {
 }
 
 function setMuted(value: boolean) {
+  mutedInMemory = value
   try {
     if (value) window.localStorage.setItem(MUTE_KEY, '1')
     else window.localStorage.removeItem(MUTE_KEY)
   } catch {
     // 저장소를 못 쓰면 이번 화면에서만 반영된다
   }
+}
+
+/** 테스트용: 메모리 값을 비워 저장소에서 다시 읽게 한다 */
+export function resetNotifyMemory() {
+  mutedInMemory = null
 }
 
 export function notifyState(): NotifyState {

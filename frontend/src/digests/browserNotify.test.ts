@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Digest } from './api'
-import { disableNotify, enableNotify, notifyDigest, notifyState } from './browserNotify'
+import { disableNotify, enableNotify, notifyDigest, notifyState, resetNotifyMemory } from './browserNotify'
 
 const digest = (over: Partial<Digest> = {}): Digest => ({
   id: '7',
@@ -43,6 +43,7 @@ describe('[F-09] 다이제스트 브라우저 알림', () => {
     FakeNotification.made = []
     vi.stubGlobal('Notification', FakeNotification)
     localStorage.clear()
+    resetNotifyMemory()
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -53,6 +54,21 @@ describe('[F-09] 다이제스트 브라우저 알림', () => {
     expect(disableNotify()).toBe('off')
     expect(await enableNotify()).toBe('on')
     expect(FakeNotification.requestPermission).toHaveBeenCalledTimes(1)
+  })
+
+  it('[예외] 저장소가 막힌 브라우저에서도 끄기는 이번 화면에서 지켜진다 (Codex N-03)', async () => {
+    await enableNotify()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    expect(notifyState()).toBe('on')
+    expect(disableNotify()).toBe('off')
+    notifyDigest(digest(), () => {})
+    expect(FakeNotification.made).toHaveLength(0)
+    vi.restoreAllMocks()
   })
 
   it('차단했거나 지원하지 않는 브라우저는 그 상태를 알려 준다', () => {
