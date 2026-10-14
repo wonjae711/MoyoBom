@@ -32,13 +32,15 @@ export class AiQuota {
         ['total', 'all'],
       ];
       let userCount = 0;
+      // 한도는 bigint로 비교한다 — 예약 다이제스트는 IP 한도를 쓰지 않으려고 Number.MAX_SAFE_INTEGER를 넘기는데,
+      // count(integer)에 맞춰 해석되면 범위 초과 오류로 예약 다이제스트가 하나도 만들어지지 않았다 (2026-10-14)
       for (const [scope, subject] of checks) {
         const limit = this.limits[scope];
         const { rows } = await client.query<{ count: number }>(
           `INSERT INTO ai_usage (day, feature, scope, subject, count)
            VALUES ((now() AT TIME ZONE 'Asia/Seoul')::date, $1, $2, $3, 1)
            ON CONFLICT (day, feature, scope, subject)
-             DO UPDATE SET count = ai_usage.count + 1 WHERE ai_usage.count < $4
+             DO UPDATE SET count = ai_usage.count + 1 WHERE ai_usage.count < $4::bigint
            RETURNING count`,
           [feature, scope, subject, limit],
         );

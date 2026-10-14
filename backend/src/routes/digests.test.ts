@@ -41,7 +41,8 @@ describe.skipIf(!testDatabaseUrl)('[F-09] 뉴스 다이제스트 (DB)', () => {
   const SLOT = kst('2030-01-02T08:00:00');
   const AFTER = new Date(SLOT.getTime() + 10 * 60_000);
 
-  function makeApp(manual = { user: 5, ip: 10, total: 100 }, scheduled = { user: 3, ip: 1e9, total: 300 }) {
+  // 예약 실행 한도는 server.ts와 같은 값 — IP 한도 Number.MAX_SAFE_INTEGER가 DB integer 범위를 넘어 실패하던 문제 재현용
+  function makeApp(manual = { user: 5, ip: 10, total: 100 }, scheduled = { user: 3, ip: Number.MAX_SAFE_INTEGER, total: 300 }) {
     delivered = [];
     service = new DigestService({
       pool,
