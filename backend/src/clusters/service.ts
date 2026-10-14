@@ -86,6 +86,8 @@ export class ClusterService {
             }))
           : [];
         embedded.push(...(await this.embedNotes(notes)));
+        // 임베딩 실패로 분석할 카드가 2개 미만이 되면 실패로 처리한다 — 빈 결과로 기존 클러스터를 지우지 않고 횟수를 돌려준다 (Codex N-01)
+        if (embedded.length < 2) throw new EmbeddingError('분석할 수 있는 카드가 2개 미만입니다');
         const groups = averageLinkage(
           embedded.map((c) => c.embedding),
           this.deps.threshold,

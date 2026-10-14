@@ -192,6 +192,23 @@ describe.skipIf(!testDatabaseUrl)('[F-08] AI 이슈 클러스터링 (DB)', () =>
     expect(res.body).toMatchObject({ analyzed: 2, excluded: 2 });
   });
 
+  it('[예외] 메모만 있는 보드에서 메모 임베딩이 전부 실패하면 오류·횟수 환불, 기존 클러스터는 그대로 둔다 (Codex N-01)', async () => {
+    await boards.addItem(boardId, owner.id, { type: 'memo', content: '반도체 공급망 메모', x: 0, y: 0 });
+    await boards.addItem(boardId, owner.id, { type: 'memo', content: '반도체 수출 메모', x: 0, y: 0 });
+    expect((await run()).status).toBe(201);
+
+    embed.mockRejectedValue(new EmbeddingError('메모 실패'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await run();
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe('ai_failed');
+    expect((await boards.getSnapshot(boardId, owner.id)).clusters).toHaveLength(1);
+    expect((await request(app).get(`/api/boards/${boardId}/clusters/quota`).set('Cookie', owner.cookie)).body).toEqual({
+      remaining: 9,
+    });
+  });
+
   it('기사 카드가 2개 미만이면 400, 멤버가 아니면 404, 하루 한도를 넘으면 429', async () => {
     await card('반도체 A');
     expect((await run()).status).toBe(400);
