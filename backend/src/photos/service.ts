@@ -91,7 +91,8 @@ export class PhotoService {
   async remove(keys: string[]): Promise<void> {
     if (keys.length === 0) return;
     try {
-      await this.storage.delete(keys);
+      const failed = await this.storage.delete(keys);
+      if (failed.length) console.error(`[photos] 삭제 실패 ${failed.length}건 (매일 정리 때 다시 시도):`, failed.join(', '));
     } catch (error) {
       console.error('[photos] 삭제 실패:', error instanceof Error ? error.message : error);
     }
@@ -107,7 +108,7 @@ export class PhotoService {
     }
   }
 
-  /** 하루 넘게 카드가 없는 사진을 지운다 (카드가 되지 못한 업로드, 삭제 실패로 남은 사진). 지운 개수 */
+  /** 하루 넘게 카드가 없는 사진을 지운다 (카드가 되지 못한 업로드, 삭제 실패로 남은 사진). 실제로 지운 개수 */
   async sweepOrphans(now = new Date()): Promise<number> {
     const old = (await this.storage.list('boards/')).filter((o) => now.getTime() - o.lastModified.getTime() > ORPHAN_AGE_MS);
     if (old.length === 0) return 0;
@@ -117,7 +118,9 @@ export class PhotoService {
     );
     const used = new Set(rows.map((r) => r.image_key));
     const orphans = old.map((o) => o.key).filter((key) => !used.has(key));
-    if (orphans.length > 0) await this.storage.delete(orphans);
-    return orphans.length;
+    if (orphans.length === 0) return 0;
+    const failed = await this.storage.delete(orphans);
+    if (failed.length) console.error(`[photos] 정리 중 삭제 실패 ${failed.length}건 (다음 정리 때 다시 시도):`, failed.join(', '));
+    return orphans.length - failed.length;
   }
 }

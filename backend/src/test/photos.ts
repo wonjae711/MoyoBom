@@ -27,8 +27,13 @@ export class MemoryPhotoStorage implements PhotoStorage {
     return `https://s3.test/photos/${key}?expires=${expiresSeconds}`;
   }
 
-  async delete(keys: string[]): Promise<void> {
-    for (const key of keys) this.objects.delete(key);
+  /** 여기 넣은 key는 지우지 못한 것으로 돌려준다 (S3 객체별 삭제 실패 흉내) */
+  readonly failDelete = new Set<string>();
+
+  async delete(keys: string[]): Promise<string[]> {
+    const failed = keys.filter((key) => this.failDelete.has(key));
+    for (const key of keys) if (!this.failDelete.has(key)) this.objects.delete(key);
+    return failed;
   }
 
   async list(prefix: string): Promise<StoredObject[]> {

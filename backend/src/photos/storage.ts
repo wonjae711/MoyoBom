@@ -29,7 +29,8 @@ export interface PhotoStorage {
   head(key: string): Promise<{ size: number; contentType: string | null } | null>;
   /** 잠깐 쓸 수 있는 조회 주소 */
   signedGetUrl(key: string, expiresSeconds: number): Promise<string>;
-  delete(keys: string[]): Promise<void>;
+  /** 지우지 못한 key 목록을 돌려준다 (S3는 요청이 성공해도 객체별 실패를 따로 알려 준다) */
+  delete(keys: string[]): Promise<string[]>;
   list(prefix: string): Promise<StoredObject[]>;
 }
 
@@ -37,8 +38,8 @@ export interface PhotoStorage {
  * S3 구현. 자격 증명은 SDK 기본 순서로 찾는다 — 서버(EC2)에서는 인스턴스 역할(moyobom-ec2-ssm)의 임시 자격 증명.
  * 버킷은 공개 차단 상태이고, 사진은 presigned 주소로만 오간다.
  */
-export function createS3Storage(options: { bucket: string; region: string }): PhotoStorage {
-  const s3 = new S3Client({ region: options.region });
+export function createS3Storage(options: { bucket: string; region: string; client?: S3Client }): PhotoStorage {
+  const s3 = options.client ?? new S3Client({ region: options.region });
   const Bucket = options.bucket;
   return {
     async createUpload(key, contentType, maxBytes, expiresSeconds) {
@@ -66,11 +67,16 @@ export function createS3Storage(options: { bucket: string; region: string }): Ph
       return getSignedUrl(s3, new GetObjectCommand({ Bucket, Key: key }), { expiresIn: expiresSeconds });
     },
     async delete(keys) {
-      // 한 번에 최대 1000개
+      // 한 번에 최대 1000개. 응답이 200이어도 Errors에 객체별 실패가 올 수 있다 (Codex N-02)
+      const failed: string[] = [];
       for (let i = 0; i < keys.length; i += 1000) {
         const chunk = keys.slice(i, i + 1000);
-        await s3.send(new DeleteObjectsCommand({ Bucket, Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true } }));
+        const out = await s3.send(
+          new DeleteObjectsCommand({ Bucket, Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true } }),
+        );
+        for (const e of out.Errors ?? []) failed.push(e.Key ?? '(알 수 없음)');
       }
+      return failed;
     },
     async list(prefix) {
       const objects: StoredObject[] = [];

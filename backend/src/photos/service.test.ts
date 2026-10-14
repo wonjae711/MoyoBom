@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BoardService } from '../boards/service.js';
 import { BoardError } from '../boards/types.js';
 import { createTestPool, testDatabaseUrl } from '../test/db.js';
@@ -116,6 +116,25 @@ describe.skipIf(!testDatabaseUrl)('사진 카드 PhotoService (F-05, DB)', () =>
 
       expect(await photos.sweepOrphans(now)).toBe(1);
       expect([...storage.objects.keys()].sort()).toEqual([`boards/${boardId}/${UUID}.png`, `boards/${boardId}/fresh.png`]);
+    });
+
+    it('[예외] 일부 사진을 지우지 못하면 지운 개수에서 빼고 기록한다 — 남은 사진은 다음 정리 때 다시 지운다 (Codex N-02)', async () => {
+      const now = new Date('2026-10-10T00:00:00Z');
+      const old = new Date(now.getTime() - 25 * 60 * 60 * 1000);
+      storage.put(`boards/${boardId}/a.png`, { lastModified: old });
+      storage.put(`boards/${boardId}/b.png`, { lastModified: old });
+      storage.failDelete.add(`boards/${boardId}/b.png`);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      expect(await photos.sweepOrphans(now)).toBe(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('삭제 실패 1건'), `boards/${boardId}/b.png`);
+      await photos.remove([`boards/${boardId}/b.png`]);
+      expect(error).toHaveBeenCalledTimes(2);
+
+      storage.failDelete.clear();
+      expect(await photos.sweepOrphans(now)).toBe(1);
+      expect(storage.objects.size).toBe(0);
+      error.mockRestore();
     });
   });
 });
