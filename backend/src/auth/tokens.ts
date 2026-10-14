@@ -1,9 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 
-/** access token 15분 / refresh token 14일 (requirements.md F-07 토큰 정책) */
+/**
+ * access token 15분 / refresh token 3시간 (requirements.md F-07 토큰 정책).
+ * refresh는 쓸 때마다 새로 발급(회전)되므로 3시간 동안 사용하지 않으면 로그아웃된다 (2026-10-14 사용자 요청, 이전 14일)
+ */
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
-export const REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60;
+export const REFRESH_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const ALGORITHM = 'HS256';
 

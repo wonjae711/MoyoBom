@@ -197,7 +197,7 @@ REFRESH_TOKENS {
 bigint id PK
 bigint user_id FK
 string token_hash "UNIQUE, 원문 대신 해시 저장"
-timestamptz expires_at "발급 후 14일"
+timestamptz expires_at "발급 후 3시간(2026-10-14, 이전 14일)"
 timestamptz created_at
 }
 ```

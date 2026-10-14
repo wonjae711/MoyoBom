@@ -83,6 +83,20 @@ describe.skipIf(!testDatabaseUrl)('인증 API (DB)', () => {
       expect((await request(app).post('/api/auth/refresh').set('Cookie', refresh)).status).toBe(401);
     });
 
+    it('3시간 동안 쓰지 않으면 로그아웃된다 — refresh 쿠키·DB 만료가 3시간이고, 갱신할 때마다 새 3시간이 시작된다', async () => {
+      const { refresh } = await session();
+      const expiresIn = async () =>
+        (await pool.query<{ s: number }>('SELECT extract(epoch FROM max(expires_at) - now())::int AS s FROM refresh_tokens')).rows[0]!.s;
+      expect(await expiresIn()).toBeGreaterThan(3 * 3600 - 60);
+      expect(await expiresIn()).toBeLessThanOrEqual(3 * 3600);
+
+      await pool.query("UPDATE refresh_tokens SET expires_at = now() + interval '1 minute'"); // 거의 3시간이 지난 상태
+      const renewed = await request(app).post('/api/auth/refresh').set('Cookie', refresh);
+      expect(renewed.status).toBe(200);
+      expect(cookieOf(renewed, 'refresh_token')).toMatch(/Max-Age=10800/);
+      expect(await expiresIn()).toBeGreaterThan(3 * 3600 - 60);
+    });
+
     it('로그아웃하면 refresh token이 폐기되고 쿠키가 지워진다', async () => {
       const { refresh } = await session();
       const logout = await request(app).post('/api/auth/logout').set('Cookie', refresh);
