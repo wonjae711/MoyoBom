@@ -18,7 +18,7 @@ import {
   type Subscription,
   type SubscriptionInput,
 } from './api'
-import { disableNotify, enableNotify, notifyState, type NotifyState } from './browserNotify'
+import { disableNotify, enableNotify, notifyState, testNotify, type NotifyState } from './browserNotify'
 import { mergeDigests } from './merge'
 import { adjustUnread, onDigestArrived, onDigestResync, refreshUnread, setUnread } from './unread'
 import './DigestPage.css'
@@ -281,9 +281,15 @@ function NotifyToggle() {
     return <p className="digests__notify-note">브라우저에서 알림이 차단돼 있어요. 주소창 왼쪽 사이트 설정에서 알림을 허용해 주세요.</p>
   }
   return state === 'on' ? (
-    <button type="button" className="btn btn--ghost" onClick={() => setState(disableNotify())}>
-      브라우저 알림 끄기
-    </button>
+    <div className="digests__notify">
+      {/* 임시: 알림 확인용 (사용자 확인 후 삭제) */}
+      <button type="button" className="btn" onClick={() => !testNotify(() => {}) && window.alert('이 브라우저에서는 알림을 만들 수 없어요')}>
+        테스트 알림
+      </button>
+      <button type="button" className="btn btn--ghost" onClick={() => setState(disableNotify())}>
+        브라우저 알림 끄기
+      </button>
+    </div>
   ) : (
     <button type="button" className="btn" onClick={() => void enableNotify().then(setState)}>
       브라우저 알림 켜기
