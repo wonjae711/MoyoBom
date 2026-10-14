@@ -18,6 +18,7 @@ import {
   type Subscription,
   type SubscriptionInput,
 } from './api'
+import { disableNotify, enableNotify, notifyState, type NotifyState } from './browserNotify'
 import { mergeDigests } from './merge'
 import { adjustUnread, onDigestArrived, onDigestResync, refreshUnread, setUnread } from './unread'
 import './DigestPage.css'
@@ -177,6 +178,7 @@ export function DigestPage() {
             <h1 className="digests__title">뉴스 다이제스트</h1>
             <p className="digests__sub">관심 분야의 새 기사를 정한 시각에 AI가 한 번에 정리해 알림함으로 보내 드립니다.</p>
           </div>
+          <NotifyToggle />
         </div>
         {error && (
           <div className="digests__error" role="alert">
@@ -268,6 +270,24 @@ export function DigestPage() {
       </div>
       {toast.view}
     </div>
+  )
+}
+
+/** 예약 다이제스트 도착 브라우저 알림 켜기·끄기. 사이트를 열어 둔 동안(다른 탭·창을 보는 중에도) 알린다 */
+function NotifyToggle() {
+  const [state, setState] = useState<NotifyState>(notifyState)
+  if (state === 'unsupported') return null
+  if (state === 'denied') {
+    return <p className="digests__notify-note">브라우저에서 알림이 차단돼 있어요. 주소창 왼쪽 사이트 설정에서 알림을 허용해 주세요.</p>
+  }
+  return state === 'on' ? (
+    <button type="button" className="btn btn--ghost" onClick={() => setState(disableNotify())}>
+      브라우저 알림 끄기
+    </button>
+  ) : (
+    <button type="button" className="btn" onClick={() => void enableNotify().then(setState)}>
+      브라우저 알림 켜기
+    </button>
   )
 }
 

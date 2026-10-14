@@ -1,6 +1,7 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { io } from 'socket.io-client'
 import { listDigests, type Digest } from './api'
+import { notifyDigest } from './browserNotify'
 
 /**
  * 안 읽은 다이제스트 개수와 새 다이제스트 도착 알림 (F-09).
@@ -60,7 +61,12 @@ export function refreshUnread(): void {
  * 연결될 때마다(처음·재연결) 서버 개수를 다시 읽는다 — 서버는 연결 즉시 본인 방에 넣으므로
  * 연결 뒤에 읽으면 그 사이 도착분을 놓치지 않는다 (Codex 068152f 리뷰 1). 머리글이 한 화면에 하나뿐이라 연결도 하나다
  */
-export function useDigestSubscription(): void {
+export function useDigestSubscription(onOpen: () => void): void {
+  // 알림을 누르면 알림함으로 — 화면이 바뀌어도 연결은 그대로 두고 최신 이동 함수만 쓴다
+  const open = useRef(onOpen)
+  useEffect(() => {
+    open.current = onOpen
+  })
   useEffect(() => {
     const socket = io({ transports: ['websocket'] })
     let connectedBefore = false
@@ -72,6 +78,7 @@ export function useDigestSubscription(): void {
     socket.on('digest:new', ({ digest }: { digest: Digest }) => {
       refreshUnread()
       for (const listener of arrivalListeners) listener(digest)
+      notifyDigest(digest, () => open.current())
     })
     return () => {
       socket.disconnect()
