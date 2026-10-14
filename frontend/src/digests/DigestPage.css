@@ -22,11 +22,6 @@
   margin-bottom: 26px;
 }
 
-.digests__notify {
-  display: flex;
-  gap: 8px;
-}
-
 .digests__notify-note {
   max-width: 260px;
   margin: 0;

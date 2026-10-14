@@ -53,21 +53,6 @@ function bodyOf(digest: Digest): string {
   return text.length > 120 ? `${text.slice(0, 119)}…` : text
 }
 
-/** 임시: 알림이 뜨는지 확인용 (사용자 확인 후 삭제) */
-export function testNotify(onOpen: () => void): boolean {
-  try {
-    const notification = new Notification('모여봄 · 테스트 알림', { body: '브라우저 알림이 잘 뜹니다.', tag: 'digest-test' })
-    notification.onclick = () => {
-      window.focus()
-      onOpen()
-      notification.close()
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** 예약 다이제스트가 도착하면 알린다. "지금 받아보기"는 누른 화면에서 바로 안내하므로 알리지 않는다 */
 export function notifyDigest(digest: Digest, onOpen: () => void): void {
   if (digest.kind !== 'scheduled' || notifyState() !== 'on') return
